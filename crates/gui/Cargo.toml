@@ -12,7 +12,6 @@ eframe = { version = "0.33.3", features = ["persistence", "x11", "wayland"] }
 env_logger = "0.11.3"
 fontique = { git = "https://github.com/valadaptive/parley", rev = "a3b6cee" }
 snafu = "0.9"
-logos = "0.15"
 gstreamer = {version = "0.24", features = ["serde"]}
 gstreamer-base = "0.24"
 gstreamer-video = "0.24"

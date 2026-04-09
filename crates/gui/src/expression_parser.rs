@@ -8,101 +8,225 @@
 //! postfix "percentage" operator that means "divide by 100". This is a lot more useful for our purposes, where some
 //! effect parameters are logically percentages.
 
-use logos::{Lexer, Logos};
-use std::{fmt, mem};
+use std::{
+    fmt::{self, Display, Write},
+    num::ParseFloatError,
+};
 
-fn parse_num(lex: &mut Lexer<Token>) -> Option<f64> {
-    lex.slice().parse::<f64>().ok()
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Token {
+    Number(f64),
+    Plus,
+    Minus,
+    Multiply,
+    Divide,
+    Power,
+    Percent,
+    LParen,
+    RParen,
 }
 
-#[derive(Clone, Copy, Logos, Debug, PartialEq)]
-#[logos(error(ParseError, ParseError::from_lexer))]
-#[logos(skip r"[ \t\n\f]+")]
-enum Token {
-    #[regex(r"([0-9]+(\.[0-9]*)?|(\.[0-9]+))([eE][+-]?[0-9]+)?", parse_num)]
-    Number(f64),
-
-    #[token("+")]
-    Plus,
-
-    #[token("-")]
-    Minus,
-
-    #[token("*")]
-    Multiply,
-
-    #[token("/")]
-    Divide,
-
-    #[token("**")]
-    Power,
-
-    #[token("%")]
-    Percent,
-
-    #[token("(")]
-    LParen,
-
-    #[token(")")]
-    RParen,
+impl Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Number(n) => n.fmt(f),
+            Self::Plus => f.write_char('+'),
+            Self::Minus => f.write_char('-'),
+            Self::Multiply => f.write_char('*'),
+            Self::Divide => f.write_char('/'),
+            Self::Power => f.write_str("**"),
+            Self::Percent => f.write_char('%'),
+            Self::LParen => f.write_char('('),
+            Self::RParen => f.write_char(')'),
+        }
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Clone)]
 pub enum ParseError {
     UnexpectedChar(char),
+    UnexpectedToken(Token),
     UnexpectedEOF,
     ExpectedChar(char),
     ExpectedOperator,
     InvalidLHS,
+    InvalidNumber(ParseFloatError),
     #[default]
     Other,
-}
-
-impl ParseError {
-    fn from_lexer(lex: &mut Lexer<'_, Token>) -> Self {
-        if let Some(unexpected_char) = lex.slice().chars().next() {
-            Self::UnexpectedChar(unexpected_char)
-        } else {
-            Self::UnexpectedEOF
-        }
-    }
 }
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParseError::UnexpectedChar(c) => write!(f, "Unexpected character: {c}"),
-            ParseError::UnexpectedEOF => write!(f, "Unexpected EOF"),
-            ParseError::ExpectedChar(c) => write!(f, "Expected a \"{c}\" character"),
-            ParseError::ExpectedOperator => write!(f, "Expected an operator"),
-            ParseError::InvalidLHS => write!(f, "Invalid left-hand side"),
-            ParseError::Other => write!(f, "Unknown error"),
+            Self::UnexpectedChar(c) => write!(f, "Unexpected character: {c}"),
+            Self::UnexpectedToken(t) => write!(f, "Unexpected token: {t}"),
+            Self::UnexpectedEOF => write!(f, "Unexpected EOF"),
+            Self::ExpectedChar(c) => write!(f, "Expected a \"{c}\" character"),
+            Self::ExpectedOperator => write!(f, "Expected an operator"),
+            Self::InvalidLHS => write!(f, "Invalid left-hand side"),
+            Self::InvalidNumber(e) => write!(f, "Invalid number: {e}"),
+            Self::Other => write!(f, "Unknown error"),
         }
+    }
+}
+
+impl From<ParseFloatError> for ParseError {
+    fn from(value: ParseFloatError) -> Self {
+        Self::InvalidNumber(value)
     }
 }
 
 impl std::error::Error for ParseError {}
 
-struct LexerWrapper<'a> {
-    lexer: Lexer<'a, Token>,
+struct Lexer<'a> {
+    remaining: &'a str,
     cur: Option<Token>,
-    next: Option<Token>,
 }
 
-impl<'a> LexerWrapper<'a> {
-    fn new_from_str(string: &'a str) -> Result<LexerWrapper<'a>, ParseError> {
-        let mut lexer = Token::lexer(string);
-        let cur = None;
-        let next = lexer.next().transpose()?;
-
-        Ok(LexerWrapper { lexer, cur, next })
+impl<'a> Lexer<'a> {
+    fn new(input: &'a str) -> Result<Self, ParseError> {
+        let mut lexer = Self {
+            remaining: input,
+            cur: None,
+        };
+        lexer.advance()?;
+        Ok(lexer)
     }
 
-    fn advance(&mut self) -> Result<Option<&Token>, ParseError> {
-        let next = self.lexer.next().transpose()?;
-        let old_next = mem::replace(&mut self.next, next);
-        self.cur = old_next;
-        Ok(self.next.as_ref())
+    fn peek_next(&self) -> Option<(char, &'a str)> {
+        let mut chars = self.remaining.chars();
+        Some((chars.next()?, chars.as_str()))
+    }
+
+    fn lex_digit_string(&mut self) -> usize {
+        let mut len = 0;
+        while let Some(('0'..='9', rest)) = self.peek_next() {
+            len += 1;
+            self.remaining = rest;
+        }
+        len
+    }
+
+    fn unexpected(&self) -> ParseError {
+        match self.peek_next() {
+            Some((c, _)) => ParseError::UnexpectedChar(c),
+            None => ParseError::UnexpectedEOF,
+        }
+    }
+
+    fn lex_number(&mut self) -> Result<f64, ParseError> {
+        let rest = self.remaining;
+
+        if let Some(('.', rest)) = self.peek_next() {
+            // Leading decimal point followed by a nonzero number of digits
+            self.remaining = rest;
+
+            if self.lex_digit_string() == 0 {
+                return Err(self.unexpected());
+            }
+        } else {
+            // Nonzerro number of digits followed by a decimal point and optional string of digits
+            if self.lex_digit_string() == 0 {
+                return Err(self.unexpected());
+            }
+            if let Some(('.', rest)) = self.peek_next() {
+                self.remaining = rest;
+            }
+            self.lex_digit_string();
+        }
+
+        // Exponent ([eE] [+-]? [0-9]+)
+        if let Some(('e' | 'E', rest)) = self.peek_next() {
+            self.remaining = rest;
+
+            // The exponent may be followed by a plus or minus
+            if let Some(('+' | '-', rest)) = self.peek_next() {
+                self.remaining = rest;
+            }
+
+            if self.lex_digit_string() == 0 {
+                return Err(self.unexpected());
+            }
+        }
+
+        let num_str = &rest[..rest.len() - self.remaining.len()];
+        let num = num_str.parse::<f64>()?;
+        Ok(num)
+    }
+
+    fn advance(&mut self) -> Result<(), ParseError> {
+        let next_token = loop {
+            let Some((peeked, rest)) = self.peek_next() else {
+                break None;
+            };
+            match peeked {
+                // Operators
+                '+' => {
+                    break {
+                        self.remaining = rest;
+                        Some(Token::Plus)
+                    };
+                }
+                '-' => {
+                    break {
+                        self.remaining = rest;
+                        Some(Token::Minus)
+                    };
+                }
+                '/' => {
+                    break {
+                        self.remaining = rest;
+                        Some(Token::Divide)
+                    };
+                }
+                '%' => {
+                    break {
+                        self.remaining = rest;
+                        Some(Token::Percent)
+                    };
+                }
+                '(' => {
+                    break {
+                        self.remaining = rest;
+                        Some(Token::LParen)
+                    };
+                }
+                ')' => {
+                    break {
+                        self.remaining = rest;
+                        Some(Token::RParen)
+                    };
+                }
+
+                '*' => {
+                    break {
+                        self.remaining = rest;
+                        if let Some(('*', rest)) = self.peek_next() {
+                            self.remaining = rest;
+                            Some(Token::Power)
+                        } else {
+                            Some(Token::Multiply)
+                        }
+                    };
+                }
+
+                '0'..='9' | '.' => {
+                    break Some(Token::Number(self.lex_number()?));
+                }
+
+                // Whitespace
+                ' ' | '\r' | '\n' | '\t' | '\x0C' => {
+                    self.remaining = rest;
+                    continue;
+                }
+
+                // Unexpected character
+                c => return Err(ParseError::UnexpectedChar(c)),
+            }
+        };
+
+        self.cur = next_token;
+        Ok(())
     }
 }
 
@@ -129,7 +253,7 @@ fn infix_binding_power(op: &Token) -> Option<(usize, usize)> {
     }
 }
 
-fn eval_expr(lexer: &mut LexerWrapper, min_binding_power: usize) -> Result<f64, ParseError> {
+fn eval_expr(lexer: &mut Lexer, min_binding_power: usize) -> Result<f64, ParseError> {
     let mut lhs = match lexer.cur {
         Some(Token::LParen) => {
             lexer.advance()?;
@@ -205,15 +329,18 @@ fn eval_expr(lexer: &mut LexerWrapper, min_binding_power: usize) -> Result<f64, 
             continue;
         }
 
-        break Ok(lhs);
+        panic!("unhandled op: {op:?}");
     }
 }
 
 pub fn eval_expression_string(string: &str) -> Result<f64, ParseError> {
-    let mut lexer = LexerWrapper::new_from_str(string)?;
-    lexer.advance()?;
+    let mut lexer = Lexer::new(string)?;
 
-    eval_expr(&mut lexer, 0)
+    let result = eval_expr(&mut lexer, 0)?;
+    if let Some(cur) = lexer.cur {
+        return Err(ParseError::UnexpectedToken(cur));
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -553,6 +680,21 @@ mod tests {
     #[test]
     fn unary_with_no_operand_is_invalid_lhs() {
         assert_eq!(err("-"), ParseError::InvalidLHS);
+    }
+
+    #[test]
+    fn unopened_paren_at_end() {
+        assert_eq!(err("1 + 2)"), ParseError::UnexpectedToken(Token::RParen));
+    }
+
+    #[test]
+    fn unopened_paren_in_middle() {
+        assert_eq!(err("1)1"), ParseError::UnexpectedToken(Token::RParen));
+    }
+
+    #[test]
+    fn unopened_paren_complex() {
+        assert_eq!(err("1+1)+1"), ParseError::UnexpectedToken(Token::RParen));
     }
 
     #[test]
