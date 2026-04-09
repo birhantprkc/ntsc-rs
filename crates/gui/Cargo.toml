@@ -12,11 +12,11 @@ eframe = { version = "0.33.3", features = ["persistence", "x11", "wayland"] }
 env_logger = "0.11.3"
 fontique = { git = "https://github.com/valadaptive/parley", rev = "a3b6cee" }
 snafu = "0.9"
-gstreamer = {version = "0.24", features = ["serde"]}
-gstreamer-base = "0.24"
-gstreamer-video = "0.24"
-gstreamer-pbutils = "0.24"
-gst-plugin-webp = { version = "0.14.1", features = ["static"] }
+gstreamer = {version = "0.25", features = ["serde"]}
+gstreamer-base = "0.25"
+gstreamer-video = "0.25"
+gstreamer-pbutils = "0.25"
+gst-plugin-webp = { version = "0.15", features = ["static"] }
 futures-lite = "2.3.0"
 async-executor = "1.12.0"
 log = "0.4.20"
