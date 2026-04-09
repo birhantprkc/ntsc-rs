@@ -6,12 +6,11 @@ license = "MIT OR ISC OR Apache-2.0"
 repository = "https://github.com/valadaptive/ntsc-rs/tree/main/crates/openfx-plugin"
 
 [dependencies]
-allocator-api2 = "0.2.16"
 ntsc-rs = { path = "../ntscrs" }
-rfd = "0.15.3"
+rfd = "0.17"
 
 [build-dependencies]
-bindgen = "0.71"
+bindgen = "0.72"
 
 [lib]
 crate-type = ["cdylib"]

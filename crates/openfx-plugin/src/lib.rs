@@ -3,6 +3,7 @@
 #![allow(non_snake_case)]
 
 mod bindings;
+mod handle;
 
 use core::slice;
 use std::{
@@ -10,16 +11,11 @@ use std::{
     ffi::{CStr, CString, c_char, c_int, c_void},
     fs,
     mem::{self, MaybeUninit},
-    ptr::{self, NonNull},
+    ptr,
     sync::{
         OnceLock,
         atomic::{AtomicBool, Ordering},
     },
-};
-
-use allocator_api2::{
-    alloc::{AllocError, Allocator, Layout},
-    boxed::Box as AllocBox,
 };
 
 use ntsc_rs::{
@@ -32,6 +28,7 @@ use ntsc_rs::{
 };
 
 use bindings::*;
+use handle::*;
 
 // SAFETY: The host promises not to mess with the raw string pointers in this struct
 unsafe impl Send for OfxPlugin {}
@@ -56,7 +53,6 @@ struct SharedData {
     host_info: HostInfo,
     property_suite: &'static OfxPropertySuiteV1,
     image_effect_suite: &'static OfxImageEffectSuiteV1,
-    memory_suite: &'static OfxMemorySuiteV1,
     parameter_suite: &'static OfxParameterSuiteV1,
     settings_list: SettingsList<NtscEffectFullSettings>,
     supports_multiple_clip_depths: AtomicBool,
@@ -86,9 +82,6 @@ impl SharedData {
             kOfxImageEffectSuite.as_ptr(),
             1,
         ) as *const OfxImageEffectSuiteV1;
-        let memory_suite =
-            (host_info.fetchSuite)(host_info.host as *const _ as _, kOfxMemorySuite.as_ptr(), 1)
-                as *const OfxMemorySuiteV1;
         let parameter_suite = (host_info.fetchSuite)(
             host_info.host as *const _ as _,
             kOfxParameterSuite.as_ptr(),
@@ -134,9 +127,6 @@ impl SharedData {
                 .as_ref()
                 .ok_or(OfxStat::kOfxStatErrMissingHostFeature)?,
             image_effect_suite: image_effect_suite
-                .as_ref()
-                .ok_or(OfxStat::kOfxStatErrMissingHostFeature)?,
-            memory_suite: memory_suite
                 .as_ref()
                 .ok_or(OfxStat::kOfxStatErrMissingHostFeature)?,
             parameter_suite: parameter_suite
@@ -1092,39 +1082,6 @@ impl Drop for OfxClipImage {
     }
 }
 
-struct OfxAllocator;
-
-unsafe impl Allocator for OfxAllocator {
-    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-        let data = shared_data.get().ok_or(AllocError)?;
-        let memoryAlloc = data.memory_suite.memoryAlloc.ok_or(AllocError)?;
-
-        if layout.size() == 0 {
-            return Err(AllocError);
-        }
-
-        let mut buf = ptr::null_mut();
-        unsafe {
-            memoryAlloc(
-                ptr::null_mut(), // effect instance handle (we don't care)
-                layout.size(),
-                &mut buf,
-            )
-            .ofx_ok()
-            .map_err(|_| AllocError)?
-        };
-
-        let buf_slice = unsafe { slice::from_raw_parts_mut(buf as *mut u8, layout.size()) };
-        NonNull::new(buf_slice).ok_or(AllocError)
-    }
-
-    unsafe fn deallocate(&self, ptr: NonNull<u8>, _layout: Layout) {
-        let data = shared_data.get().unwrap();
-        let memoryFree = data.memory_suite.memoryFree.unwrap();
-        let _ = memoryFree(ptr.as_ptr() as *mut _);
-    }
-}
-
 struct EffectApplicationParams<'a> {
     src_ptr: *mut c_void,
     src_row_bytes: i32,
@@ -1139,7 +1096,7 @@ struct EffectApplicationParams<'a> {
 }
 
 struct EffectStorageParams<'a> {
-    yiq_data: AllocBox<[f32], OfxAllocator>,
+    yiq_data: ImageDataHandle<f32>,
     dst_ptr: *mut c_void,
     dst_row_bytes: i32,
     src_bounds: OfxRectI,
@@ -1151,6 +1108,8 @@ struct EffectStorageParams<'a> {
 
 impl<'a> EffectApplicationParams<'a> {
     unsafe fn apply<S: PixelFormat, T: Normalize>(self) -> OfxResult<EffectStorageParams<'a>> {
+        let data = shared_data.get().ok_or(OfxStat::kOfxStatFailed)?;
+
         let srcWidth = (self.src_bounds.x2 - self.src_bounds.x1) as usize;
         let srcHeight = (self.src_bounds.y2 - self.src_bounds.y1) as usize;
 
@@ -1159,7 +1118,9 @@ impl<'a> EffectApplicationParams<'a> {
         let yiqBufLength = YiqView::buf_length_for((srcWidth, srcHeight), cur_field);
 
         let mut ntsc_buf =
-            AllocBox::<[f32], _>::new_zeroed_slice_in(yiqBufLength, OfxAllocator).assume_init();
+            ImageDataHandle::<f32>::new_zeroed(yiqBufLength, data.image_effect_suite)?
+                .assume_init();
+        let mut locked_buf = ntsc_buf.lock()?;
 
         let (srcFirstRowPtr, flip_y) = if self.src_row_bytes < 0 {
             // Currently untested because I can't find an OFX host that uses negative rowbytes. Fingers crossed it works!
@@ -1173,7 +1134,8 @@ impl<'a> EffectApplicationParams<'a> {
         };
         let srcStride = self.src_row_bytes.unsigned_abs() as usize;
 
-        let mut yiq_view = YiqView::from_parts(&mut ntsc_buf, (srcWidth, srcHeight), cur_field);
+        let mut yiq_view =
+            YiqView::from_parts(locked_buf.as_mut(), (srcWidth, srcHeight), cur_field);
 
         let srcData = slice::from_raw_parts(
             srcFirstRowPtr as *const MaybeUninit<T>,
@@ -1199,6 +1161,8 @@ impl<'a> EffectApplicationParams<'a> {
         self.effect
             .apply_effect_to_yiq(&mut yiq_view, self.frame_num, self.proxy_scale);
 
+        drop(locked_buf);
+
         Ok(EffectStorageParams {
             yiq_data: ntsc_buf,
             dst_ptr: self.dst_ptr,
@@ -1219,7 +1183,8 @@ impl EffectStorageParams<'_> {
         let srcHeight = (self.src_bounds.y2 - self.src_bounds.y1) as usize;
 
         let cur_field = self.effect.use_field.to_yiq_field(self.frame_num);
-        let yiq_view = YiqView::from_parts(&mut self.yiq_data, (srcWidth, srcHeight), cur_field);
+        let mut locked = self.yiq_data.lock()?;
+        let yiq_view = YiqView::from_parts(locked.as_mut(), (srcWidth, srcHeight), cur_field);
 
         let (dstFirstRowPtr, flip_y) = if self.dst_row_bytes < 0 {
             // Currently untested because I can't find an OFX host that uses negative rowbytes. Fingers crossed it works!
