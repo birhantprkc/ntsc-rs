@@ -59,7 +59,7 @@ use super::{
         FsSnafu, JSONParseSnafu, JSONReadSnafu, LoadVideoSnafu,
     },
     executor::AppExecutor,
-    layout_helper::{LayoutHelper, TopBottomPanelExt},
+    layout_helper::{LayoutHelper, PanelExt},
     pipeline_info::{PipelineInfo, PipelineMetadata, PipelineStatus},
     presets::PresetsState,
     render_job::RenderJob,
@@ -190,7 +190,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
             easy_mode_enabled &= EXPERIMENTAL_EASY_MODE;
 
-            ctx.style_mut(|style| style.interaction.tooltip_delay = 0.5);
+            ctx.global_style_mut(|style| style.interaction.tooltip_delay = 0.5);
             Ok(Box::new(NtscApp::new(
                 ctx,
                 settings_list,
@@ -854,8 +854,8 @@ impl NtscApp {
     }
 
     fn show_effect_settings(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::bottom("preset_copy_paste")
-            .interact_height_tall(ui.ctx())
+        egui::Panel::bottom("preset_copy_paste")
+            .interact_height_tall(ui)
             .show_inside(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     if ui.button("Save to...").clicked() {
@@ -1004,12 +1004,12 @@ impl NtscApp {
         let id = ui.make_persistent_id("presets_manager_open");
         let collapse_state =
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
-        egui::TopBottomPanel::bottom("preset_manager")
+        egui::Panel::bottom("preset_manager")
             .resizable(collapse_state.is_open())
             // Determined experimentally to prevent the presets manager from becoming too tall to drag back down by its
             // top edge
-            .max_height(600.0f32.min(ui.available_height() - 100.0))
-            .min_height(egui::lerp(
+            .max_size(600.0f32.min(ui.available_height() - 100.0))
+            .min_size(egui::lerp(
                 ui.spacing().interact_size.y..=200.0,
                 collapse_state.openness(ui.ctx()),
             ))
@@ -1495,8 +1495,8 @@ impl NtscApp {
             (framerate.numer() != 0).then_some(framerate)
         })();
 
-        egui::TopBottomPanel::top("video_info")
-            .interact_height(ui.ctx())
+        egui::Panel::top("video_info")
+            .interact_height(ui)
             .show_inside(ui, |ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let mut remove_pipeline = false;
@@ -1649,8 +1649,8 @@ impl NtscApp {
                 });
             });
 
-        egui::TopBottomPanel::bottom("video_controls")
-            .interact_height_tall(ui.ctx())
+        egui::Panel::bottom("video_controls")
+            .interact_height_tall(ui)
             .show_inside(ui, |ui| {
                 if self.pipeline.is_none() {
                     ui.disable();
@@ -1676,9 +1676,8 @@ impl NtscApp {
                         btn_widget,
                     );
 
-                    let ctx = ui.ctx();
-                    if !ctx.wants_keyboard_input()
-                        && ctx.input(|i| {
+                    if !ui.egui_wants_keyboard_input()
+                        && ui.input(|i| {
                             i.events.iter().any(|event| {
                                 if let egui::Event::Key {
                                     key,
@@ -1873,7 +1872,7 @@ impl NtscApp {
             });
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::side_top_panel(&ui.ctx().style()).inner_margin(0.0))
+            .frame(egui::Frame::side_top_panel(&ui.style()).inner_margin(0.0))
             .show_inside(ui, |ui| {
                 ui.visuals_mut().clip_rect_margin = 0.0;
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
@@ -2079,68 +2078,71 @@ impl NtscApp {
             });
     }
 
-    fn show_app(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn show_app(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         if self.credits_dialog_open {
-            self.show_credits_dialog(ctx);
+            self.show_credits_dialog(ui.ctx());
         }
 
         if self.third_party_licenses_dialog_open {
-            self.show_third_party_licenses_dialog(ctx);
+            self.show_third_party_licenses_dialog(ui.ctx());
         }
 
         if self.license_dialog_open {
-            self.show_license_dialog(ctx);
+            self.show_license_dialog(ui.ctx());
         }
 
-        self.update_dialog.show(ctx);
+        self.update_dialog.show(ui.ctx());
 
         if self.image_sequence_dialog_queued_render_job.is_some() {
-            let modal = egui::Modal::new(egui::Id::new("directory_not_empty")).show(ctx, |ui| {
-                ui.set_max_width(ctx.input(|i| i.content_rect().width() - 24.0).min(400.0));
-                ui.set_min_width(200.0);
-                ui.heading("Output directory is not empty");
-                ui.label(
+            let modal =
+                egui::Modal::new(egui::Id::new("directory_not_empty")).show(ui.ctx(), |ui| {
+                    ui.set_max_width(ui.input(|i| i.content_rect().width() - 24.0).min(400.0));
+                    ui.set_min_width(200.0);
+                    ui.heading("Output directory is not empty");
+                    ui.label(
                     "You're rendering an image sequence into a directory that isn't empty. This \
                      will output many individual image files into that directory.",
                 );
-                ui.separator();
+                    ui.separator();
 
-                egui::Sides::new().show(
-                    ui,
-                    |_| {},
-                    |ui| {
-                        if ui.button("OK").clicked() {
-                            let job =
-                                self.image_sequence_dialog_queued_render_job.take().unwrap()(self);
-                            match job {
-                                Ok(job) => {
-                                    self.render_jobs.push(job);
+                    egui::Sides::new().show(
+                        ui,
+                        |_| {},
+                        |ui| {
+                            if ui.button("OK").clicked() {
+                                let job = self
+                                    .image_sequence_dialog_queued_render_job
+                                    .take()
+                                    .unwrap()(self);
+                                match job {
+                                    Ok(job) => {
+                                        self.render_jobs.push(job);
+                                    }
+                                    Err(e) => {
+                                        self.handle_error(&e);
+                                    }
                                 }
-                                Err(e) => {
-                                    self.handle_error(&e);
-                                }
+                            } else if ui.button("Cancel").clicked() {
+                                self.image_sequence_dialog_queued_render_job = None;
                             }
-                        } else if ui.button("Cancel").clicked() {
-                            self.image_sequence_dialog_queued_render_job = None;
-                        }
-                    },
-                );
-            });
+                        },
+                    );
+                });
 
             if modal.should_close() {
                 self.image_sequence_dialog_queued_render_job = None;
             }
         }
 
-        egui::TopBottomPanel::top("menu_bar")
-            .interact_height(ctx)
-            .show(ctx, |ui| {
+        egui::Panel::top("menu_bar")
+            .interact_height(ui)
+            .show_inside(ui, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.menu_button("File", |ui| {
                         if ui.button("Open").clicked() {
                             let file_dialog =
                                 rfd::AsyncFileDialog::new().set_parent(frame).pick_file();
-                            let ctx = ctx.clone();
+                            let ctx = ui.ctx().clone();
                             self.spawn(async move {
                                 let handle = file_dialog.await;
 
@@ -2153,7 +2155,7 @@ impl NtscApp {
                             ui.close();
                         }
                         if ui.button("Quit").clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            ui.send_viewport_cmd(egui::ViewportCommand::Close);
                             ui.close();
                         }
                     });
@@ -2291,15 +2293,15 @@ impl NtscApp {
                 });
             });
 
-        egui::SidePanel::left("controls")
-            .frame(egui::Frame::side_top_panel(&ctx.style()).inner_margin(0.0))
+        egui::Panel::left("controls")
+            .frame(egui::Frame::side_top_panel(&ui.style()).inner_margin(0.0))
             .resizable(true)
-            .default_width(425.0)
-            .width_range(300.0..=800.0)
-            .show(ctx, |ui| {
+            .default_size(425.0)
+            .size_range(300.0..=800.0)
+            .show_inside(ui, |ui| {
                 ui.visuals_mut().clip_rect_margin = 0.0;
-                egui::TopBottomPanel::top("left_tabs")
-                    .interact_height(ui.ctx())
+                egui::Panel::top("left_tabs")
+                    .interact_height(ui)
                     .show_inside(ui, |ui| {
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                             ui.selectable_value(
@@ -2316,7 +2318,7 @@ impl NtscApp {
                     });
 
                 egui::CentralPanel::default()
-                    .frame(egui::Frame::central_panel(&ctx.style()).inner_margin(0.0))
+                    .frame(egui::Frame::central_panel(&ui.style()).inner_margin(0.0))
                     .show_inside(ui, |ui| match self.left_panel_state {
                         LeftPanelState::EffectSettings => {
                             self.show_effect_settings(ui, frame);
@@ -2328,23 +2330,23 @@ impl NtscApp {
             });
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::side_top_panel(&ctx.style()).inner_margin(0.0))
-            .show(ctx, |ui| {
+            .frame(egui::Frame::side_top_panel(&ui.style()).inner_margin(0.0))
+            .show_inside(ui, |ui| {
                 ui.visuals_mut().clip_rect_margin = 0.0;
                 self.show_video_pane(ui, frame);
             });
     }
 
-    fn show_loading_screen(ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+    fn show_loading_screen(ui: &mut egui::Ui) {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.centered_and_justified(|ui| {
                 ui.add(egui::Spinner::new().size(128.0));
             });
         });
     }
 
-    fn show_error_screen(ctx: &egui::Context, error: &ApplicationError) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+    fn show_error_screen(ui: &mut egui::Ui, error: &ApplicationError) {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.vertical(|ui| {
                 ui.heading("An error occurred while loading");
                 ui.label(error.to_string());
@@ -2375,16 +2377,16 @@ impl NtscApp {
 }
 
 impl eframe::App for NtscApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.tick();
 
         match self.gstreamer_init.check() {
             GstreamerInitState::Initializing(..) => {
-                Self::show_loading_screen(ctx);
+                Self::show_loading_screen(ui);
                 return;
             }
             GstreamerInitState::Initialized(Err(error)) => {
-                Self::show_error_screen(ctx, error);
+                Self::show_error_screen(ui, error);
                 return;
             }
             _ => {}
@@ -2411,18 +2413,18 @@ impl eframe::App for NtscApp {
         }
 
         if let Some(err) = pipeline_error {
-            self.close_video(ctx);
+            self.close_video(ui.ctx());
             self.handle_error(&err);
         }
 
-        self.handle_keyboard_shortcuts(ctx);
+        self.handle_keyboard_shortcuts(ui.ctx());
 
-        self.show_app(ctx, frame);
+        self.show_app(ui, frame);
 
         self.undoer
-            .feed_state(ctx.input(|input| input.time), &self.effect_settings);
+            .feed_state(ui.input(|input| input.time), &self.effect_settings);
 
-        ctx.update_dnd_state();
+        ui.update_dnd_state();
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {

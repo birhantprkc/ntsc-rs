@@ -36,18 +36,20 @@ impl LayoutHelper for egui::Ui {
     }
 }
 
-pub trait TopBottomPanelExt {
-    fn interact_height(self, ctx: &egui::Context) -> Self;
-    fn interact_height_tall(self, ctx: &egui::Context) -> Self;
+pub trait PanelExt {
+    fn interact_height(self, ui: &egui::Ui) -> Self;
+    fn interact_height_tall(self, ui: &egui::Ui) -> Self;
 }
 
-impl TopBottomPanelExt for egui::TopBottomPanel {
-    fn interact_height(self, ctx: &egui::Context) -> Self {
-        let mut frame = egui::Frame::side_top_panel(&ctx.style());
+// This only makes sense for horizontal panels, but egui shipped their new panel API without providing *any* way to tell
+// if a panel is horizontal. Sigh...
+impl PanelExt for egui::Panel {
+    fn interact_height(self, ui: &egui::Ui) -> Self {
+        let mut frame = egui::Frame::side_top_panel(&ui.style());
         frame.inner_margin.top = 3;
         frame.inner_margin.bottom = 3;
-        self.exact_height(
-            ctx.style().spacing.interact_size.y
+        self.exact_size(
+            ui.style().spacing.interact_size.y
                 + frame.inner_margin.sum().y
                 + frame.stroke.width * 2.0
                 + frame.outer_margin.sum().y,
@@ -55,11 +57,11 @@ impl TopBottomPanelExt for egui::TopBottomPanel {
         .frame(frame)
     }
 
-    fn interact_height_tall(self, ctx: &egui::Context) -> Self {
-        let mut frame = egui::Frame::side_top_panel(&ctx.style());
+    fn interact_height_tall(self, ui: &egui::Ui) -> Self {
+        let mut frame = egui::Frame::side_top_panel(&ui.style());
         frame.inner_margin.top = 0;
         frame.inner_margin.bottom = 0;
-        self.exact_height(ctx.style().spacing.interact_size.y * 2.0)
+        self.exact_size(ui.style().spacing.interact_size.y * 2.0)
             .frame(frame)
     }
 }

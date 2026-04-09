@@ -4,6 +4,7 @@ use eframe::{
     egui::FontData,
     epaint::text::{FontInsert, InsertFontFamily},
 };
+use fontique::Script;
 use log::{debug, warn};
 
 pub fn system_fallback_fonts() -> impl Iterator<Item = FontInsert> {
@@ -76,7 +77,10 @@ pub fn system_fallback_fonts() -> impl Iterator<Item = FontInsert> {
 
     let mut load_fonts = |collection: &mut fontique::Collection, script: &[u8; 4]| -> bool {
         let family_ids = collection
-            .fallback_families(fontique::FallbackKey::new(script, None))
+            .fallback_families(fontique::FallbackKey::new(
+                Script::from_bytes(*script),
+                None,
+            ))
             .collect::<Vec<_>>();
         let mut any_loaded = false;
         for family_id in family_ids {
