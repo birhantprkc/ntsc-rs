@@ -21,7 +21,7 @@ impl Geometric {
 impl Distribution<usize> for Geometric {
     // We can simulate a geometric distribution by taking the floor of an exponential distribution
     // https://en.wikipedia.org/wiki/Geometric_distribution#Related_distributions
-    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> usize {
+    fn sample<R: rand::RngExt + ?Sized>(&self, rng: &mut R) -> usize {
         (rng.random::<f64>().ln() / self.lambda) as usize
     }
 }

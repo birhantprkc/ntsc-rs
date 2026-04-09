@@ -17,6 +17,7 @@ use eframe::egui::{
 use futures_lite::Future;
 use gstreamer::{ClockTime, Fraction, glib::subclass::types::ObjectSubclassExt, prelude::*};
 use gstreamer_video::VideoInterlaceMode;
+use rand::RngExt as _;
 
 use crate::{
     app::update_dialog::UpdateDialogState,
@@ -596,7 +597,7 @@ impl NtscApp {
                         .on_hover_text("Randomize seed")
                         .clicked()
                     {
-                        value = rand::random::<i32>();
+                        value = rand::rand_core::UnwrapErr(rand::rngs::SysRng).random::<i32>();
                         changed = true;
                     }
 
