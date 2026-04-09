@@ -1157,32 +1157,33 @@ impl NtscEffect {
 
         let seed = self.random_seed as u32 as u64;
 
-        let scale_factor = scale_factor.map(|scale_factor| {
-            scale_factor
-                * if self
-                    .scale
-                    .as_ref()
-                    .is_some_and(|scale| scale.scale_with_video_size)
-                {
-                    yiq.dimensions.1 as f32 / 480.0
-                } else {
-                    1.0
-                }
-        });
+        let video_size_scale_factor = if self
+            .scale
+            .as_ref()
+            .is_some_and(|scale| scale.scale_with_video_size)
+        {
+            yiq.dimensions.1 as f32 / 480.0
+        } else {
+            1.0
+        };
         let info = CommonInfo {
             level: Level::new(),
             seed,
             frame_num,
-            horizontal_scale: self
-                .scale
-                .as_ref()
-                .map(|scale| scale.horizontal_scale * scale_factor[0])
-                .unwrap_or(1.0),
-            vertical_scale: self
-                .scale
-                .as_ref()
-                .map(|scale| scale.vertical_scale * scale_factor[1])
-                .unwrap_or(1.0),
+            horizontal_scale: scale_factor[0]
+                * video_size_scale_factor
+                * self
+                    .scale
+                    .as_ref()
+                    .map(|scale| scale.horizontal_scale)
+                    .unwrap_or(1.0),
+            vertical_scale: scale_factor[1]
+                * video_size_scale_factor
+                * self
+                    .scale
+                    .as_ref()
+                    .map(|scale| scale.vertical_scale)
+                    .unwrap_or(1.0),
         };
 
         luma_filter(yiq, &info, self.input_luma_filter);
