@@ -20,23 +20,28 @@ use clap::{
 use color_eyre::eyre::{Report, Result, WrapErr};
 use console::{StyledObject, Term, measure_text_width, style, truncate_str};
 use gstreamer::ClockTime;
+use ntsc_rs::{
+    NtscEffectFullSettings,
+    settings::{ParseSettingsError, SettingsList},
+};
 use ntsc_rs_gui::{
     app::{
-        self, executor::ApplessExecutor, format_eta::format_eta, render_job::{RenderJob, RenderJobState, SharedRenderJob}, render_settings::{
+        self,
+        executor::ApplessExecutor,
+        format_eta::format_eta,
+        render_job::{RenderJob, RenderJobState, SharedRenderJob},
+        render_settings::{
             Ffv1BitDepth, Ffv1Settings, H264Settings, OutputCodec, PngSequenceSettings,
             PngSettings, RenderInterlaceMode, RenderPipelineCodec, RenderPipelineSettings,
             StillImageSettings,
-        }, ui_context::UIContext
+        },
+        ui_context::UIContext,
     },
     gst_utils::{
         clock_format::clock_time_parser,
         init::initialize_gstreamer,
         ntsc_pipeline::{VideoScale, VideoScaleFilter},
     },
-};
-use ntsc_rs::{
-    NtscEffectFullSettings,
-    settings::{ParseSettingsError, SettingsList},
 };
 
 fn parse_settings(
