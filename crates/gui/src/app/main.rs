@@ -1872,7 +1872,7 @@ impl NtscApp {
             });
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::side_top_panel(&ui.style()).inner_margin(0.0))
+            .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(0.0))
             .show_inside(ui, |ui| {
                 ui.visuals_mut().clip_rect_margin = 0.0;
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
@@ -2294,7 +2294,7 @@ impl NtscApp {
             });
 
         egui::Panel::left("controls")
-            .frame(egui::Frame::side_top_panel(&ui.style()).inner_margin(0.0))
+            .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(0.0))
             .resizable(true)
             .default_size(425.0)
             .size_range(300.0..=800.0)
@@ -2318,7 +2318,7 @@ impl NtscApp {
                     });
 
                 egui::CentralPanel::default()
-                    .frame(egui::Frame::central_panel(&ui.style()).inner_margin(0.0))
+                    .frame(egui::Frame::central_panel(ui.style()).inner_margin(0.0))
                     .show_inside(ui, |ui| match self.left_panel_state {
                         LeftPanelState::EffectSettings => {
                             self.show_effect_settings(ui, frame);
@@ -2330,7 +2330,7 @@ impl NtscApp {
             });
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::side_top_panel(&ui.style()).inner_margin(0.0))
+            .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(0.0))
             .show_inside(ui, |ui| {
                 ui.visuals_mut().clip_rect_margin = 0.0;
                 self.show_video_pane(ui, frame);
