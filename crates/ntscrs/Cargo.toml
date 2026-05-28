@@ -21,6 +21,7 @@ sval_json = { version = "2.14.1", features = ["std"] }
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false }
 image = { version = "0.25.1", default-features = false, features = ["png"] }
+fearless_simd = "0.4.1"
 
 [features]
 default = ["rayon"]
@@ -28,6 +29,10 @@ rayon = ["dep:rayon-core", "dep:num_cpus"]
 
 [[bench]]
 name = "filter_profile"
+harness = false
+
+[[bench]]
+name = "filter_blockscan"
 harness = false
 
 [lints]
