@@ -22,7 +22,7 @@ futures-lite = "2.3.0"
 async-executor = "1.12.0"
 log = "0.4.20"
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland"] }
-rand = { version = "0.10", default-features = false, features = ["std", "sys_rng"] }
+getrandom = "0.4.2"
 tinyjson = "2.5.1"
 open = "5.1.4"
 serde = "1.0"

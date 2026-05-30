@@ -17,7 +17,6 @@ use eframe::egui::{
 use futures_lite::Future;
 use gstreamer::{ClockTime, Fraction, glib::subclass::types::ObjectSubclassExt, prelude::*};
 use gstreamer_video::VideoInterlaceMode;
-use rand::RngExt as _;
 
 use crate::{
     app::update_dialog::UpdateDialogState,
@@ -268,7 +267,8 @@ impl NtscApp {
             // Execute functions outside the executor--if they call `spawn`, we don't want to recursively lock the
             // executor's mutex.
             for f in app_fns {
-                self.handle_result_with(f);
+                let result = f(self);
+                self.handle_result(result);
             }
         }
     }
@@ -543,11 +543,6 @@ impl NtscApp {
         }
     }
 
-    pub fn handle_result_with<T, E: Error, F: FnOnce(&mut Self) -> Result<T, E>>(&mut self, cb: F) {
-        let result = cb(self);
-        self.handle_result(result);
-    }
-
     fn undo(&mut self) {
         if let Some(new_state) = self.undoer.undo(&self.effect_settings).cloned() {
             self.set_effect_settings(new_state);
@@ -597,7 +592,7 @@ impl NtscApp {
                         .on_hover_text("Randomize seed")
                         .clicked()
                     {
-                        value = rand::rand_core::UnwrapErr(rand::rngs::SysRng).random::<i32>();
+                        value = getrandom::u32().unwrap() as i32;
                         changed = true;
                     }
 
