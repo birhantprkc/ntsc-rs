@@ -7,7 +7,7 @@ use std::{
     borrow::Cow,
     collections::HashMap,
     error::Error,
-    fmt::Display,
+    fmt::{Display, Write as _},
     num::{ParseFloatError, ParseIntError},
     ops::RangeInclusive,
 };
@@ -19,9 +19,6 @@ use hifijson::{
     token::Lex,
 };
 use num_enum::TryFromPrimitive;
-pub use sval;
-pub use sval_json;
-use sval_json::{stream_to_fmt_write, stream_to_io_write};
 
 // These are the individual setting definitions. The descriptions of what they do are included below, so I mostly won't
 // repeat them here.
@@ -484,57 +481,40 @@ pub struct SettingsList<T: Settings> {
     pub setting_descriptors: Box<[SettingDescriptor<T>]>,
 }
 
-struct SettingsAndList<'a, 'b, T: Settings> {
-    settings: &'a T,
-    list: &'b SettingsList<T>,
+#[derive(Debug)]
+pub enum SerializeSettingsError {
+    InvalidKeyCharacter { key: &'static str },
+    InvalidFloat { key: &'static str, value: f32 },
+    FormatError(std::fmt::Error),
+    IoError(std::io::Error),
 }
 
-impl<T: Settings> sval::Value for SettingsAndList<'_, '_, T> {
-    fn stream<'sval, S: sval::Stream<'sval> + ?Sized>(&'sval self, stream: &mut S) -> sval::Result {
-        stream.map_begin(None)?;
-
-        for descriptor in self.list.all_descriptors() {
-            stream.map_key_begin()?;
-            stream.text_begin(Some(descriptor.id.name.len()))?;
-            stream.text_fragment(descriptor.id.name)?;
-            stream.text_end()?;
-            stream.map_key_end()?;
-
-            stream.map_value_begin()?;
-            match &descriptor.kind {
-                SettingKind::Enumeration { .. } => {
-                    stream.u32(
-                        self.settings
-                            .get_field::<EnumValue>(&descriptor.id)
-                            .unwrap()
-                            .0,
-                    )?;
-                }
-                SettingKind::Percentage { .. } | SettingKind::FloatRange { .. } => {
-                    stream.f32(self.settings.get_field::<f32>(&descriptor.id).unwrap())?;
-                }
-                SettingKind::IntRange { .. } => {
-                    stream.i32(self.settings.get_field::<i32>(&descriptor.id).unwrap())?;
-                }
-                SettingKind::Boolean | SettingKind::Group { .. } => {
-                    stream.bool(self.settings.get_field::<bool>(&descriptor.id).unwrap())?;
-                }
+impl std::fmt::Display for SerializeSettingsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SerializeSettingsError::InvalidKeyCharacter { key } => {
+                write!(f, "invalid character in key \"{key}\"")
             }
-            stream.map_value_end()?;
+            SerializeSettingsError::InvalidFloat { key, value } => {
+                write!(f, "invalid float value {value} for setting \"{key}\"")
+            }
+            SerializeSettingsError::FormatError(e) => write!(f, "error formatting value: {e}"),
+            SerializeSettingsError::IoError(e) => write!(f, "I/O error: {e}"),
         }
+    }
+}
 
-        stream.map_key_begin()?;
-        stream.text_begin(Some("version".len()))?;
-        stream.text_fragment("version")?;
-        stream.text_end()?;
-        stream.map_key_end()?;
-        stream.map_value_begin()?;
-        stream.u32(1)?;
-        stream.map_value_end()?;
+impl std::error::Error for SerializeSettingsError {}
 
-        stream.map_end()?;
+impl From<std::fmt::Error> for SerializeSettingsError {
+    fn from(value: std::fmt::Error) -> Self {
+        Self::FormatError(value)
+    }
+}
 
-        Ok(())
+impl From<std::io::Error> for SerializeSettingsError {
+    fn from(value: std::io::Error) -> Self {
+        Self::IoError(value)
     }
 }
 
@@ -627,33 +607,87 @@ impl<T: Settings> SettingsList<T> {
         }
     }
 
-    /// Convert the settings in the given settings struct to JSON.
-    pub fn to_json<'a>(&'a self, settings: &'a T) -> impl sval::Value + 'a {
-        SettingsAndList {
-            settings,
-            list: self,
+    fn stream_json<F: for<'a> FnMut(&'a str) -> Result<(), SerializeSettingsError>>(
+        &self,
+        settings: &T,
+        mut emit: F,
+    ) -> Result<(), SerializeSettingsError> {
+        emit("{")?;
+
+        let mut fmt_buf = String::with_capacity(32);
+
+        for descriptor in self.all_descriptors() {
+            // key
+            emit("\"")?;
+            emit(descriptor.id.name)?;
+            emit("\":")?;
+
+            // value
+            match &descriptor.kind {
+                SettingKind::Enumeration { .. } => {
+                    let value = settings.get_field::<EnumValue>(&descriptor.id).unwrap().0;
+
+                    write!(&mut fmt_buf, "{value}")?;
+                    emit(&fmt_buf)?;
+                    fmt_buf.clear();
+                }
+                SettingKind::Percentage { .. } | SettingKind::FloatRange { .. } => {
+                    let value = settings.get_field::<f32>(&descriptor.id).unwrap();
+                    if !value.is_finite() {
+                        return Err(SerializeSettingsError::InvalidFloat {
+                            key: descriptor.id.name,
+                            value,
+                        });
+                    }
+                    write!(&mut fmt_buf, "{value}")?;
+                    emit(&fmt_buf)?;
+                    fmt_buf.clear();
+                }
+                SettingKind::IntRange { .. } => {
+                    let value = settings.get_field::<i32>(&descriptor.id).unwrap();
+                    write!(&mut fmt_buf, "{value}")?;
+                    emit(&fmt_buf)?;
+                    fmt_buf.clear();
+                }
+                SettingKind::Boolean | SettingKind::Group { .. } => {
+                    let value = settings.get_field::<bool>(&descriptor.id).unwrap();
+                    write!(&mut fmt_buf, "{value}")?;
+                    emit(&fmt_buf)?;
+                    fmt_buf.clear();
+                }
+            }
+            emit(",")?;
         }
+
+        // version + trailing bracket
+        emit("\"version\":1}")?;
+
+        Ok(())
     }
 
     pub fn write_json_to_fmt(
         &self,
         settings: &T,
-        dest: impl std::fmt::Write,
-    ) -> Result<(), sval_json::Error> {
-        let json = self.to_json(settings);
-        stream_to_fmt_write(dest, json)
+        mut dest: impl std::fmt::Write,
+    ) -> Result<(), SerializeSettingsError> {
+        self.stream_json(settings, |fragment| {
+            dest.write_str(fragment)?;
+            Ok(())
+        })
     }
 
     pub fn write_json_to_io(
         &self,
         settings: &T,
-        dest: impl std::io::Write,
-    ) -> Result<(), sval_json::Error> {
-        let json = self.to_json(settings);
-        stream_to_io_write(dest, json)
+        mut dest: impl std::io::Write,
+    ) -> Result<(), SerializeSettingsError> {
+        self.stream_json(settings, |fragment| {
+            dest.write(fragment.as_bytes())?;
+            Ok(())
+        })
     }
 
-    pub fn to_json_string(&self, settings: &T) -> Result<String, sval_json::Error> {
+    pub fn to_json_string(&self, settings: &T) -> Result<String, SerializeSettingsError> {
         let mut s = String::new();
         self.write_json_to_fmt(settings, &mut s)?;
         Ok(s)
