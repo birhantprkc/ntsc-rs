@@ -2957,7 +2957,6 @@ dependencies = [
  "fearless_simd",
  "hifijson",
  "image",
- "ntsc-rs-macros",
  "num_cpus",
  "num_enum",
  "rayon-core",
@@ -3004,15 +3003,6 @@ dependencies = [
  "tinyjson",
  "trash",
  "ureq",
-]
-
-[[package]]
-name = "ntsc-rs-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]

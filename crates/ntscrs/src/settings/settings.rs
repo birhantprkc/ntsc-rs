@@ -32,6 +32,23 @@ pub struct SettingsBlock<T> {
     pub settings: T,
 }
 
+impl<T> SettingsBlock<T> {
+    pub(crate) const fn enabled(inner: T) -> Self {
+        Self {
+            enabled: true,
+            settings: inner,
+        }
+    }
+
+    pub fn as_option(&self) -> Option<&T> {
+        if self.enabled {
+            Some(&self.settings)
+        } else {
+            None
+        }
+    }
+}
+
 impl<T: Default + Clone> From<&Option<T>> for SettingsBlock<T> {
     fn from(opt: &Option<T>) -> Self {
         Self {

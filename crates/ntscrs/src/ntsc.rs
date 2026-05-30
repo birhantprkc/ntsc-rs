@@ -166,15 +166,12 @@ impl EffectCtx {
         frame_num: usize,
         scale_factor: [f32; 2],
     ) -> Self {
-        let video_size_scale_factor = if settings
-            .scale
-            .as_ref()
-            .is_some_and(|scale| scale.scale_with_video_size)
-        {
-            height as f32 / 480.0
-        } else {
-            1.0
-        };
+        let video_size_scale_factor =
+            if settings.scale.enabled && settings.scale.settings.scale_with_video_size {
+                height as f32 / 480.0
+            } else {
+                1.0
+            };
 
         Self {
             level: ctx.level,
@@ -184,14 +181,14 @@ impl EffectCtx {
                 * video_size_scale_factor
                 * settings
                     .scale
-                    .as_ref()
+                    .as_option()
                     .map(|scale| scale.horizontal_scale)
                     .unwrap_or(1.0),
             vertical_scale: scale_factor[1]
                 * video_size_scale_factor
                 * settings
                     .scale
-                    .as_ref()
+                    .as_option()
                     .map(|scale| scale.vertical_scale)
                     .unwrap_or(1.0),
         }
@@ -1208,38 +1205,39 @@ impl NtscEffect {
             ctx.filter_plane(yiq.y, width, &preemphasis_filter, InitialCondition::Zero, 0);
         }
 
-        if let Some(noise) = &self.composite_noise {
-            ctx.composite_noise(yiq, noise);
+        if self.composite_noise.enabled {
+            ctx.composite_noise(yiq, &self.composite_noise.settings);
         }
 
         if self.snow_intensity > 0.0 && ctx.horizontal_scale > 0.0 {
             ctx.snow(yiq, self.snow_intensity * 0.01, self.snow_anisotropy);
         }
 
-        if let Some(HeadSwitchingSettings {
-            height,
-            offset,
-            horiz_shift,
-            mid_line,
-        }) = &self.head_switching
-        {
+        if self.head_switching.enabled {
+            let HeadSwitchingSettings {
+                height,
+                offset,
+                horiz_shift,
+                mid_line,
+            } = &self.head_switching.settings;
             ctx.head_switching(
                 yiq,
                 (*height).try_into().unwrap_or_default(),
                 (*offset).try_into().unwrap_or_default(),
                 *horiz_shift,
-                mid_line.as_ref(),
+                mid_line.as_option(),
             );
         }
 
-        if let Some(TrackingNoiseSettings {
-            height,
-            wave_intensity,
-            snow_intensity,
-            snow_anisotropy,
-            noise_intensity,
-        }) = self.tracking_noise
-        {
+        if self.tracking_noise.enabled {
+            let TrackingNoiseSettings {
+                height,
+                wave_intensity,
+                snow_intensity,
+                snow_anisotropy,
+                noise_intensity,
+            } = self.tracking_noise.settings;
+
             ctx.tracking_noise(
                 yiq,
                 height.try_into().unwrap_or_default(),
@@ -1261,12 +1259,12 @@ impl NtscEffect {
             ctx.luma_smear(yiq, self.luma_smear);
         }
 
-        if let Some(ringing) = &self.ringing {
+        if self.ringing.enabled {
             let notch_filter = make_notch_filter(
-                (ringing.frequency / ctx.horizontal_scale).clamp(0.0, 1.0),
-                ringing.power,
+                (self.ringing.settings.frequency / ctx.horizontal_scale).clamp(0.0, 1.0),
+                self.ringing.settings.power,
             )
-            .with_scale(ringing.intensity);
+            .with_scale(self.ringing.settings.intensity);
             ctx.filter_plane(
                 yiq.y,
                 width,
@@ -1276,26 +1274,26 @@ impl NtscEffect {
             );
         }
 
-        if let Some(luma_noise_settings) = &self.luma_noise {
+        if self.luma_noise.enabled {
             ctx.plane_noise(
                 yiq.y,
                 yiq.dimensions.0,
-                luma_noise_settings,
+                &self.luma_noise.settings,
                 noise_seeds::VIDEO_LUMA,
             );
         }
 
-        if let Some(chroma_noise_settings) = &self.chroma_noise {
+        if self.chroma_noise.enabled {
             ctx.plane_noise(
                 yiq.i,
                 yiq.dimensions.0,
-                chroma_noise_settings,
+                &self.chroma_noise.settings,
                 noise_seeds::VIDEO_CHROMA_I,
             );
             ctx.plane_noise(
                 yiq.q,
                 yiq.dimensions.0,
-                chroma_noise_settings,
+                &self.chroma_noise.settings,
                 noise_seeds::VIDEO_CHROMA_Q,
             );
         }
@@ -1318,18 +1316,18 @@ impl NtscEffect {
             );
         }
 
-        if let Some(vhs_settings) = &self.vhs_settings {
-            if let Some(edge_wave) = &vhs_settings.edge_wave
-                && edge_wave.intensity > 0.0
+        if self.vhs_settings.enabled {
+            if self.vhs_settings.settings.edge_wave.enabled
+                && self.vhs_settings.settings.edge_wave.settings.intensity > 0.0
             {
-                ctx.vhs_edge_wave(yiq, edge_wave);
+                ctx.vhs_edge_wave(yiq, &self.vhs_settings.settings.edge_wave.settings);
             }
 
             if let Some(VHSTapeParams {
                 luma_cut,
                 chroma_cut,
                 chroma_delay,
-            }) = vhs_settings.tape_speed.filter_params()
+            }) = self.vhs_settings.settings.tape_speed.filter_params()
             {
                 let chroma_delay = (chroma_delay as f32 * ctx.horizontal_scale).round() as usize;
                 // TODO: add an option to control whether there should be a line on the left from the filter starting
@@ -1377,14 +1375,15 @@ impl NtscEffect {
                 ctx.filter_plane(yiq.y, width, &luma_filter_single, InitialCondition::Zero, 0);
             }
 
-            if vhs_settings.chroma_loss > 0.0 {
-                ctx.chroma_loss(yiq, vhs_settings.chroma_loss);
+            if self.vhs_settings.settings.chroma_loss > 0.0 {
+                ctx.chroma_loss(yiq, self.vhs_settings.settings.chroma_loss);
             }
 
-            if let Some(sharpen) = &vhs_settings.sharpen
+            if self.vhs_settings.settings.sharpen.enabled
                 && let Some(VHSTapeParams { luma_cut, .. }) =
-                    vhs_settings.tape_speed.filter_params()
+                    self.vhs_settings.settings.tape_speed.filter_params()
             {
+                let sharpen = &self.vhs_settings.settings.sharpen.settings;
                 let frequency_extra_multiplier = match self.filter_type {
                     FilterType::ConstantK => 4.0,
                     FilterType::Butterworth => 1.0,

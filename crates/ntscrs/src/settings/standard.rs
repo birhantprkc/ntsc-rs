@@ -4,7 +4,6 @@ use crate::{
     settings::{JsonValue, SettingsBlock, SortedMap},
     yiq_fielding::YiqField,
 };
-use ntsc_rs_macros::FullSettings;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use super::{
@@ -150,14 +149,12 @@ impl Default for VHSEdgeWaveSettings {
     }
 }
 
-#[derive(FullSettings, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct VHSSettings {
     pub tape_speed: VHSTapeSpeed,
     pub chroma_loss: f32,
-    #[settings_block]
-    pub sharpen: Option<VHSSharpenSettings>,
-    #[settings_block]
-    pub edge_wave: Option<VHSEdgeWaveSettings>,
+    pub sharpen: SettingsBlock<VHSSharpenSettings>,
+    pub edge_wave: SettingsBlock<VHSEdgeWaveSettings>,
 }
 
 impl Default for VHSSettings {
@@ -165,8 +162,8 @@ impl Default for VHSSettings {
         Self {
             tape_speed: VHSTapeSpeed::LP,
             chroma_loss: 0.000025,
-            sharpen: Some(VHSSharpenSettings::default()),
-            edge_wave: Some(VHSEdgeWaveSettings::default()),
+            sharpen: Default::default(),
+            edge_wave: Default::default(),
         }
     }
 }
@@ -205,13 +202,12 @@ impl Default for HeadSwitchingMidLineSettings {
     }
 }
 
-#[derive(FullSettings, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct HeadSwitchingSettings {
     pub height: i32,
     pub offset: i32,
     pub horiz_shift: f32,
-    #[settings_block]
-    pub mid_line: Option<HeadSwitchingMidLineSettings>,
+    pub mid_line: SettingsBlock<HeadSwitchingMidLineSettings>,
 }
 
 impl Default for HeadSwitchingSettings {
@@ -220,7 +216,7 @@ impl Default for HeadSwitchingSettings {
             height: 8,
             offset: 3,
             horiz_shift: 72.0,
-            mid_line: Some(HeadSwitchingMidLineSettings::default()),
+            mid_line: Default::default(),
         }
     }
 }
@@ -263,7 +259,7 @@ impl Default for RingingSettings {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FbmNoiseSettings {
     pub frequency: f32,
     pub intensity: f32,
@@ -290,8 +286,8 @@ impl Default for ScaleSettings {
 #[rustfmt::skip]
 pub mod setting_id {
     use crate::{setting_id, settings::SettingID};
-    use super::NtscEffectFullSettings;
-    type NtscSettingID = SettingID<NtscEffectFullSettings>;
+    use super::NtscEffect;
+    type NtscSettingID = SettingID<NtscEffect>;
 
     pub const CHROMA_LOWPASS_IN: NtscSettingID = setting_id!(0, "chroma_lowpass_in", chroma_lowpass_in);
     pub const COMPOSITE_SHARPENING: NtscSettingID = setting_id!(1, "composite_preemphasis", composite_sharpening);
@@ -357,7 +353,7 @@ pub mod setting_id {
     pub const SCALE_SETTINGS: NtscSettingID = setting_id!(61, "scale_settings", scale.enabled);
 }
 
-#[derive(FullSettings, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct NtscEffect {
     pub random_seed: i32,
@@ -370,30 +366,22 @@ pub struct NtscEffect {
     pub composite_sharpening: f32,
     pub video_scanline_phase_shift: PhaseShift,
     pub video_scanline_phase_shift_offset: i32,
-    #[settings_block(nested)]
-    pub head_switching: Option<HeadSwitchingSettings>,
-    #[settings_block]
-    pub tracking_noise: Option<TrackingNoiseSettings>,
-    #[settings_block]
-    pub composite_noise: Option<FbmNoiseSettings>,
-    #[settings_block]
-    pub ringing: Option<RingingSettings>,
-    #[settings_block]
-    pub luma_noise: Option<FbmNoiseSettings>,
-    #[settings_block]
-    pub chroma_noise: Option<FbmNoiseSettings>,
+    pub head_switching: SettingsBlock<HeadSwitchingSettings>,
+    pub tracking_noise: SettingsBlock<TrackingNoiseSettings>,
+    pub composite_noise: SettingsBlock<FbmNoiseSettings>,
+    pub ringing: SettingsBlock<RingingSettings>,
+    pub luma_noise: SettingsBlock<FbmNoiseSettings>,
+    pub chroma_noise: SettingsBlock<FbmNoiseSettings>,
     pub snow_intensity: f32,
     pub snow_anisotropy: f32,
     pub chroma_phase_noise_intensity: f32,
     pub chroma_phase_error: f32,
     pub chroma_delay_horizontal: f32,
     pub chroma_delay_vertical: i32,
-    #[settings_block(nested)]
-    pub vhs_settings: Option<VHSSettings>,
+    pub vhs_settings: SettingsBlock<VHSSettings>,
     pub chroma_vert_blend: bool,
     pub chroma_lowpass_out: ChromaLowpass,
-    #[settings_block]
-    pub scale: Option<ScaleSettings>,
+    pub scale: SettingsBlock<ScaleSettings>,
 }
 
 impl Default for NtscEffect {
@@ -410,22 +398,22 @@ impl Default for NtscEffect {
             composite_sharpening: 1.0,
             video_scanline_phase_shift: PhaseShift::Degrees180,
             video_scanline_phase_shift_offset: 0,
-            head_switching: Some(HeadSwitchingSettings::default()),
-            tracking_noise: Some(TrackingNoiseSettings::default()),
-            ringing: Some(RingingSettings::default()),
+            head_switching: Default::default(),
+            tracking_noise: Default::default(),
+            ringing: Default::default(),
             snow_intensity: 0.00025,
             snow_anisotropy: 0.5,
-            composite_noise: Some(FbmNoiseSettings {
+            composite_noise: SettingsBlock::enabled(FbmNoiseSettings {
                 frequency: 0.5,
                 intensity: 0.05,
                 detail: 1,
             }),
-            luma_noise: Some(FbmNoiseSettings {
+            luma_noise: SettingsBlock::enabled(FbmNoiseSettings {
                 frequency: 0.5,
                 intensity: 0.01,
                 detail: 1,
             }),
-            chroma_noise: Some(FbmNoiseSettings {
+            chroma_noise: SettingsBlock::enabled(FbmNoiseSettings {
                 frequency: 0.05,
                 intensity: 0.1,
                 detail: 2,
@@ -434,14 +422,14 @@ impl Default for NtscEffect {
             chroma_phase_error: 0.0,
             chroma_delay_horizontal: 0.0,
             chroma_delay_vertical: 0,
-            vhs_settings: Some(VHSSettings::default()),
+            vhs_settings: Default::default(),
             chroma_vert_blend: true,
-            scale: Some(ScaleSettings::default()),
+            scale: Default::default(),
         }
     }
 }
 
-impl Settings for NtscEffectFullSettings {
+impl Settings for NtscEffect {
     fn setting_descriptors() -> Box<[SettingDescriptor<Self>]> {
         vec![
             SettingDescriptor {
@@ -1194,7 +1182,7 @@ impl Settings for NtscEffectFullSettings {
             luma_smear: 0.0,                    // added in v0.5.2
             head_switching: SettingsBlock {
                 enabled: true,
-                settings: HeadSwitchingSettingsFullSettings {
+                settings: HeadSwitchingSettings {
                     mid_line: SettingsBlock {
                         // added in v0.7.0
                         enabled: false,
@@ -1208,24 +1196,28 @@ impl Settings for NtscEffectFullSettings {
                 settings: FbmNoiseSettings {
                     frequency: 0.25, // added in v0.7.0
                     detail: 1,       // added in v0.7.0
-                    ..Default::default()
+                    intensity: 0.05,
                 },
             },
             luma_noise: SettingsBlock {
                 enabled: false,
-                settings: Default::default(),
+                settings: FbmNoiseSettings {
+                    frequency: 0.5,
+                    intensity: 0.01,
+                    detail: 1,
+                },
             }, // added in v0.7.0
             chroma_noise: SettingsBlock {
                 enabled: true,
                 settings: FbmNoiseSettings {
                     frequency: 0.05, // added in v0.5.1
                     detail: 1,       // added in v0.5.1
-                    ..Default::default()
+                    intensity: 0.1,
                 },
             },
             vhs_settings: SettingsBlock {
                 enabled: true,
-                settings: VHSSettingsFullSettings {
+                settings: VHSSettings {
                     edge_wave: SettingsBlock {
                         enabled: true,
                         settings: VHSEdgeWaveSettings {
@@ -1249,8 +1241,8 @@ impl Settings for NtscEffectFullSettings {
     }
 }
 
-impl SettingsList<NtscEffectFullSettings> {
-    pub fn from_json(&self, json: &str) -> Result<NtscEffectFullSettings, ParseSettingsError> {
+impl SettingsList<NtscEffect> {
+    pub fn from_json(&self, json: &str) -> Result<NtscEffect, ParseSettingsError> {
         let parsed_map = parse_json(json)?;
 
         if parsed_map.contains_key("_composite_preemphasis") {
@@ -1264,7 +1256,7 @@ impl SettingsList<NtscEffectFullSettings> {
             return Err(ParseSettingsError::UnsupportedVersion { version });
         }
 
-        let mut dst_settings = NtscEffectFullSettings::legacy_value();
+        let mut dst_settings = NtscEffect::legacy_value();
         Self::settings_from_json(&parsed_map, &self.setting_descriptors, &mut dst_settings)?;
 
         Ok(dst_settings)
@@ -1272,8 +1264,8 @@ impl SettingsList<NtscEffectFullSettings> {
 
     fn from_ntscqt_json(
         json: &SortedMap<Cow<'_, str>, JsonValue>,
-    ) -> Result<NtscEffectFullSettings, ParseSettingsError> {
-        let mut settings = NtscEffectFullSettings::default();
+    ) -> Result<NtscEffect, ParseSettingsError> {
+        let mut settings = NtscEffect::default();
         settings.use_field = UseField::Upper;
         settings.filter_type = FilterType::ConstantK;
         settings.input_luma_filter = LumaLowpass::Box;
@@ -1308,7 +1300,7 @@ impl SettingsList<NtscEffectFullSettings> {
             enabled: json
                 .get_and_expect::<bool>("_vhs_head_switching")?
                 .unwrap_or_default(),
-            settings: HeadSwitchingSettingsFullSettings {
+            settings: HeadSwitchingSettings {
                 height: 6,
                 offset: 0,
                 horiz_shift: 6.0,
@@ -1389,7 +1381,7 @@ impl SettingsList<NtscEffectFullSettings> {
             enabled: json
                 .get_and_expect::<bool>("_emulating_vhs")?
                 .unwrap_or_default(),
-            settings: VHSSettingsFullSettings {
+            settings: VHSSettings {
                 tape_speed: match json.get_and_expect::<f32>("_output_vhs_tape_speed")? {
                     Some(1.0) => VHSTapeSpeed::LP,
                     Some(2.0) => VHSTapeSpeed::EP,

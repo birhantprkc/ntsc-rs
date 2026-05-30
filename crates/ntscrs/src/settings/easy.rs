@@ -3,15 +3,13 @@ use alloc::{boxed::Box, vec};
 #[cfg(not(feature = "std"))]
 use core_maths::CoreFloat as _;
 
-use ntsc_rs_macros::FullSettings;
-
 use super::{
     MenuItem, SettingDescriptor, SettingKind, Settings, SettingsBlock,
     standard::{
         ChromaDemodulationFilter, ChromaLowpass, FbmNoiseSettings, FilterType,
-        HeadSwitchingMidLineSettings, HeadSwitchingSettingsFullSettings, LumaLowpass,
-        NtscEffectFullSettings, PhaseShift, RingingSettings, ScaleSettings, TrackingNoiseSettings,
-        UseField, VHSEdgeWaveSettings, VHSSettingsFullSettings, VHSSharpenSettings, VHSTapeSpeed,
+        HeadSwitchingMidLineSettings, HeadSwitchingSettings, LumaLowpass, NtscEffect, PhaseShift,
+        RingingSettings, ScaleSettings, TrackingNoiseSettings, UseField, VHSEdgeWaveSettings,
+        VHSSettings, VHSSharpenSettings, VHSTapeSpeed,
     },
 };
 
@@ -30,15 +28,14 @@ impl Default for EzTrackingNoiseSettings {
     }
 }
 
-#[derive(FullSettings, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct EzVHSSettings {
     tape_speed: VHSTapeSpeed,
     chroma_loss: f32,
     sharpen: f32,
     edge_wave: f32,
     head_switching: f32,
-    #[settings_block]
-    tracking_noise: Option<EzTrackingNoiseSettings>,
+    tracking_noise: SettingsBlock<EzTrackingNoiseSettings>,
 }
 
 impl Default for EzVHSSettings {
@@ -49,12 +46,12 @@ impl Default for EzVHSSettings {
             sharpen: 0.0,
             edge_wave: 0.5,
             head_switching: 6.0,
-            tracking_noise: Some(EzTrackingNoiseSettings::default()),
+            tracking_noise: Default::default(),
         }
     }
 }
 
-#[derive(FullSettings, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct EasyMode {
     random_seed: i32,
     use_field: UseField,
@@ -64,13 +61,10 @@ pub struct EasyMode {
     chroma_demodulation_filter: ChromaDemodulationFilter,
     luma_smear: f32,
     ringing: f32,
-    #[settings_block]
-    luma_noise: Option<FbmNoiseSettings>,
-    #[settings_block]
-    chroma_noise: Option<FbmNoiseSettings>,
+    luma_noise: SettingsBlock<FbmNoiseSettings>,
+    chroma_noise: SettingsBlock<FbmNoiseSettings>,
     chroma_phase_noise: f32,
-    #[settings_block(nested)]
-    vhs_settings: Option<EzVHSSettings>,
+    vhs_settings: SettingsBlock<EzVHSSettings>,
 }
 
 impl Default for EasyMode {
@@ -84,27 +78,26 @@ impl Default for EasyMode {
             chroma_demodulation_filter: ChromaDemodulationFilter::Notch,
             luma_smear: 0.2,
             ringing: 0.5,
-            luma_noise: Some(FbmNoiseSettings {
+            luma_noise: SettingsBlock::enabled(FbmNoiseSettings {
                 frequency: 0.1,
                 intensity: 0.01,
                 detail: 2,
             }),
-            chroma_noise: Some(FbmNoiseSettings {
+            chroma_noise: SettingsBlock::enabled(FbmNoiseSettings {
                 frequency: 0.05,
                 intensity: 0.1,
                 detail: 2,
             }),
             chroma_phase_noise: 0.01,
-            vhs_settings: Some(EzVHSSettings::default()),
+            vhs_settings: Default::default(),
         }
     }
 }
 
 #[rustfmt::skip]
 pub mod setting_id {
-    use crate::{setting_id, settings::SettingID};
-    use super::EasyModeFullSettings;
-    type EasySettingID = SettingID<EasyModeFullSettings>;
+    use crate::{setting_id, settings::{SettingID, easy::EasyMode}};
+    type EasySettingID = SettingID<EasyMode>;
 
     pub const RANDOM_SEED: EasySettingID = setting_id!(4096 | 0, "ez_random_seed", random_seed);
     pub const USE_FIELD: EasySettingID = setting_id!(4096 | 1, "ez_use_field", use_field);
@@ -137,7 +130,7 @@ pub mod setting_id {
     pub const VHS_EDGE_WAVE: EasySettingID = setting_id!(4096 | 24, "ez_vhs_edge_wave", vhs_settings.settings.edge_wave);
 }
 
-impl Settings for EasyModeFullSettings {
+impl Settings for EasyMode {
     fn setting_descriptors() -> Box<[SettingDescriptor<Self>]> {
         vec![
             SettingDescriptor {
@@ -481,8 +474,8 @@ impl Settings for EasyModeFullSettings {
     }
 }
 
-impl From<&EasyModeFullSettings> for NtscEffectFullSettings {
-    fn from(easy_settings: &EasyModeFullSettings) -> Self {
+impl From<&EasyMode> for NtscEffect {
+    fn from(easy_settings: &EasyMode) -> Self {
         Self {
             random_seed: easy_settings.random_seed,
             use_field: easy_settings.use_field,
@@ -497,7 +490,7 @@ impl From<&EasyModeFullSettings> for NtscEffectFullSettings {
             head_switching: SettingsBlock {
                 enabled: easy_settings.vhs_settings.enabled
                     && easy_settings.vhs_settings.settings.head_switching > 0.0,
-                settings: HeadSwitchingSettingsFullSettings {
+                settings: HeadSwitchingSettings {
                     height: (easy_settings.vhs_settings.settings.head_switching * 1.25).round()
                         as i32,
                     offset: (easy_settings.vhs_settings.settings.head_switching * 0.25).round()
@@ -548,7 +541,7 @@ impl From<&EasyModeFullSettings> for NtscEffectFullSettings {
             },
             composite_noise: SettingsBlock {
                 enabled: false,
-                settings: NtscEffectFullSettings::default().composite_noise.settings,
+                settings: NtscEffect::default().composite_noise.settings,
             },
             ringing: SettingsBlock {
                 enabled: easy_settings.ringing > 0.0,
@@ -568,7 +561,7 @@ impl From<&EasyModeFullSettings> for NtscEffectFullSettings {
             chroma_delay_vertical: 0,
             vhs_settings: SettingsBlock {
                 enabled: easy_settings.vhs_settings.enabled,
-                settings: VHSSettingsFullSettings {
+                settings: VHSSettings {
                     tape_speed: easy_settings.vhs_settings.settings.tape_speed,
                     chroma_loss: easy_settings.vhs_settings.settings.chroma_loss,
                     sharpen: SettingsBlock {

@@ -14,7 +14,7 @@ use std::{
 use blocking::unblock;
 use eframe::egui::{self, InnerResponse};
 use futures_lite::Future;
-use ntsc_rs::NtscEffectFullSettings;
+use ntsc_rs::NtscEffect;
 use snafu::prelude::*;
 
 use crate::path_compare::cmp_paths;
@@ -109,7 +109,7 @@ enum DirState {
 #[derive(Debug)]
 struct SelectedPreset {
     path: PathBuf,
-    settings: NtscEffectFullSettings,
+    settings: NtscEffect,
 }
 
 #[derive(Debug)]

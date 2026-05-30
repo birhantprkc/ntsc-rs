@@ -13,7 +13,7 @@ use std::{
 use after_effects::{self as ae};
 use handle::SliceHandle;
 use ntsc_rs::{
-    NtscEffect, NtscEffectFullSettings,
+    NtscEffect,
     ctx::Context,
     settings::{
         EnumValue, SettingDescriptor, SettingField, SettingID, SettingKind, Settings, SettingsList,
@@ -27,14 +27,14 @@ use raw_window_handle::Win32WindowHandle;
 use window_handle::WindowAndDisplayHandle;
 
 struct Plugin {
-    settings: SettingsList<NtscEffectFullSettings>,
+    settings: SettingsList<NtscEffect>,
     ctx: Context,
 }
 
 impl Default for Plugin {
     fn default() -> Self {
         Self {
-            settings: SettingsList::<NtscEffectFullSettings>::new(),
+            settings: SettingsList::<NtscEffect>::new(),
             ctx: Context::new(),
         }
     }
@@ -147,8 +147,8 @@ impl AdobePluginGlobal for Plugin {
         Self::map_params(
             params,
             &self.settings.setting_descriptors,
-            &NtscEffectFullSettings::default(),
-            &NtscEffectFullSettings::legacy_value(),
+            &NtscEffect::default(),
+            &NtscEffect::legacy_value(),
         )?;
 
         Ok(())
@@ -373,7 +373,7 @@ impl Plugin {
         out_pixel_format: NtscrsPixelFormat,
         params: &mut Parameters<ParamID>,
     ) -> Result<(), Error> {
-        let effect: NtscEffect = self.apply_settings(params)?.into();
+        let effect: NtscEffect = self.apply_settings(params)?;
 
         let frame_num = in_data.current_frame() as usize;
 
@@ -500,7 +500,7 @@ impl Plugin {
 
         let scale_factors: [f32; 2] = if effect
             .scale
-            .as_ref()
+            .as_option()
             .is_some_and(|scale| scale.scale_with_video_size)
         {
             [1.0, 1.0]
@@ -584,7 +584,7 @@ impl Plugin {
 
     fn update_controls_disabled(
         params: &mut Parameters<ParamID>,
-        descriptors: &[SettingDescriptor<NtscEffectFullSettings>],
+        descriptors: &[SettingDescriptor<NtscEffect>],
         enabled: bool,
     ) -> Result<(), Error> {
         for descriptor in descriptors {
@@ -612,14 +612,14 @@ impl Plugin {
 
     fn map_params(
         params: &mut Parameters<ParamID>,
-        descriptors: &[SettingDescriptor<NtscEffectFullSettings>],
-        default_settings: &NtscEffectFullSettings,
-        legacy_default_settings: &NtscEffectFullSettings,
+        descriptors: &[SettingDescriptor<NtscEffect>],
+        default_settings: &NtscEffect,
+        legacy_default_settings: &NtscEffect,
     ) -> Result<(), Error> {
         fn get_defaults<T: SettingField + 'static>(
-            defaults: &NtscEffectFullSettings,
-            legacy_defaults: &NtscEffectFullSettings,
-            descriptor: &SettingDescriptor<NtscEffectFullSettings>,
+            defaults: &NtscEffect,
+            legacy_defaults: &NtscEffect,
+            descriptor: &SettingDescriptor<NtscEffect>,
         ) -> Result<[T; 2], Error> {
             Ok([
                 defaults
@@ -915,9 +915,9 @@ impl Plugin {
     }
 
     fn update_params_from_settings(
-        descriptors: &[SettingDescriptor<NtscEffectFullSettings>],
+        descriptors: &[SettingDescriptor<NtscEffect>],
         params: &mut Parameters<ParamID>,
-        settings: &NtscEffectFullSettings,
+        settings: &NtscEffect,
     ) -> Result<(), Error> {
         for descriptor in descriptors {
             match &descriptor.kind {
@@ -994,16 +994,13 @@ impl Plugin {
         Ok(())
     }
 
-    fn apply_settings(
-        &self,
-        params: &mut Parameters<ParamID>,
-    ) -> Result<NtscEffectFullSettings, Error> {
-        let mut settings = NtscEffectFullSettings::default();
+    fn apply_settings(&self, params: &mut Parameters<ParamID>) -> Result<NtscEffect, Error> {
+        let mut settings = NtscEffect::default();
 
         fn apply_settings_list(
-            descriptors: &[SettingDescriptor<NtscEffectFullSettings>],
+            descriptors: &[SettingDescriptor<NtscEffect>],
             params: &mut Parameters<ParamID>,
-            settings: &mut NtscEffectFullSettings,
+            settings: &mut NtscEffect,
         ) -> Result<(), Error> {
             for descriptor in descriptors {
                 match &descriptor.kind {

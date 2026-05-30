@@ -16,5 +16,5 @@ mod thread_pool;
 pub mod yiq_fielding;
 
 pub use ctx::Context;
-pub use settings::standard::{NtscEffect, NtscEffectFullSettings};
+pub use settings::standard::NtscEffect;
 pub use yiq_fielding::{YiqOwned, YiqView};

@@ -21,10 +21,7 @@ use std::{
 use ntsc_rs::{
     NtscEffect,
     ctx::Context,
-    settings::{
-        EnumValue, SettingDescriptor, SettingID, SettingKind, Settings, SettingsList,
-        standard::NtscEffectFullSettings,
-    },
+    settings::{EnumValue, SettingDescriptor, SettingID, SettingKind, Settings, SettingsList},
     yiq_fielding::{BlitInfo, DeinterlaceMode, Normalize, PixelFormat, Rect, Rgb, Rgbx, YiqView},
 };
 
@@ -55,18 +52,14 @@ struct SharedData {
     property_suite: &'static OfxPropertySuiteV1,
     image_effect_suite: &'static OfxImageEffectSuiteV1,
     parameter_suite: &'static OfxParameterSuiteV1,
-    settings_list: SettingsList<NtscEffectFullSettings>,
+    settings_list: SettingsList<NtscEffect>,
     supports_multiple_clip_depths: AtomicBool,
     /// Map of setting IDs to C-string-ified IDs, names, descriptions, and ID for the settings group, if the setting is
     /// a group. OpenFX says these need to have a static lifetime.
-    strings: HashMap<
-        SettingID<NtscEffectFullSettings>,
-        (CString, CString, Option<CString>, Option<CString>),
-    >,
+    strings: HashMap<SettingID<NtscEffect>, (CString, CString, Option<CString>, Option<CString>)>,
     /// Map of setting IDs and their index in the menu to C-string-ified names and descriptions. OpenFX says these need
     /// to have a static lifetime.
-    menu_item_strings:
-        HashMap<(SettingID<NtscEffectFullSettings>, u32), (CString, Option<CString>)>,
+    menu_item_strings: HashMap<(SettingID<NtscEffect>, u32), (CString, Option<CString>)>,
     ctx: ntsc_rs::ctx::Context,
 }
 
@@ -90,7 +83,7 @@ impl SharedData {
             1,
         ) as *const OfxParameterSuiteV1;
 
-        let settings_list = SettingsList::<NtscEffectFullSettings>::new();
+        let settings_list = SettingsList::<NtscEffect>::new();
         let mut strings = HashMap::new();
         let mut menu_item_strings = HashMap::new();
         for descriptor in settings_list.all_descriptors() {
@@ -270,8 +263,8 @@ unsafe fn action_describe(descriptor: OfxImageEffectHandle) -> OfxResult<()> {
 unsafe fn map_params(
     data: &'static SharedData,
     param_set: OfxParamSetHandle,
-    setting_descriptors: &[SettingDescriptor<NtscEffectFullSettings>],
-    default_settings: &NtscEffectFullSettings,
+    setting_descriptors: &[SettingDescriptor<NtscEffect>],
+    default_settings: &NtscEffect,
     parent: &CStr,
 ) -> OfxResult<()> {
     let paramDefine = data
@@ -542,8 +535,8 @@ unsafe fn apply_params(
     data: &'static SharedData,
     param_set: OfxParamSetHandle,
     time: f64,
-    setting_descriptors: &[SettingDescriptor<NtscEffectFullSettings>],
-    dst: &mut NtscEffectFullSettings,
+    setting_descriptors: &[SettingDescriptor<NtscEffect>],
+    dst: &mut NtscEffect,
 ) -> OfxResult<()> {
     let paramGetHandle = data
         .parameter_suite
@@ -710,7 +703,7 @@ unsafe fn action_describe_in_context(descriptor: OfxImageEffectHandle) -> OfxRes
         data,
         param_set,
         &data.settings_list.setting_descriptors,
-        &NtscEffectFullSettings::default(),
+        &NtscEffect::default(),
         c"",
     )?;
 
@@ -811,7 +804,7 @@ unsafe fn action_get_clip_preferences(outArgs: OfxPropertySetHandle) -> OfxResul
 unsafe fn update_controls_disabled(
     data: &'static SharedData,
     param_set: OfxParamSetHandle,
-    setting_descriptors: &[SettingDescriptor<NtscEffectFullSettings>],
+    setting_descriptors: &[SettingDescriptor<NtscEffect>],
     time: f64,
     enabled: bool,
 ) -> OfxResult<()> {
@@ -864,8 +857,8 @@ unsafe fn update_controls_disabled(
 unsafe fn set_controls_from_settings(
     data: &'static SharedData,
     param_set: OfxParamSetHandle,
-    setting_descriptors: &[SettingDescriptor<NtscEffectFullSettings>],
-    settings: &NtscEffectFullSettings,
+    setting_descriptors: &[SettingDescriptor<NtscEffect>],
+    settings: &NtscEffect,
 ) -> OfxResult<()> {
     let paramGetHandle = data
         .parameter_suite
@@ -1006,7 +999,7 @@ unsafe fn action_instance_changed(
                 return Ok(());
             };
 
-            let mut settings = NtscEffectFullSettings::default();
+            let mut settings = NtscEffect::default();
             apply_params(
                 data,
                 param_set,
@@ -1495,13 +1488,13 @@ unsafe fn action_render(
 
     let mut param_set: OfxParamSetHandle = ptr::null_mut();
     getParamSet(descriptor, &mut param_set).ofx_ok()?;
-    let mut out_settings: NtscEffectFullSettings = NtscEffectFullSettings::default();
+    let mut effect: NtscEffect = NtscEffect::default();
     apply_params(
         data,
         param_set,
         time,
         &data.settings_list.setting_descriptors,
-        &mut out_settings,
+        &mut effect,
     )?;
 
     let mut srgb_param: OfxParamHandle = ptr::null_mut();
@@ -1516,14 +1509,13 @@ unsafe fn action_render(
     paramGetValueAtTime(srgb_param, time, &mut srgb_bool_value).ofx_ok()?;
     let apply_srgb_gamma = srgb_bool_value != 0;
 
-    let effect: NtscEffect = out_settings.into();
     let frame_num = time as usize;
 
     let mut proxy_scale_x = 1.0;
     let mut proxy_scale_y = 1.0;
     if !effect
         .scale
-        .as_ref()
+        .as_option()
         .is_some_and(|scale| scale.scale_with_video_size)
     {
         propGetDouble(

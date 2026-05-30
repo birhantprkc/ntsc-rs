@@ -39,8 +39,8 @@ use crate::{
 
 use ntsc_rs::settings::{
     EnumValue as SettingsEnumValue, SettingDescriptor, SettingKind, Settings, SettingsList,
-    easy::{self, EasyModeFullSettings},
-    standard::{NtscEffectFullSettings, setting_id},
+    easy::{self, EasyMode},
+    standard::{NtscEffect, setting_id},
 };
 use snafu::ResultExt;
 
@@ -139,8 +139,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             });
             let init_state = GstreamerInitState::Initializing(Some(handle));
 
-            let settings_list = SettingsList::<NtscEffectFullSettings>::new();
-            let settings_list_easy = SettingsList::<EasyModeFullSettings>::new();
+            let settings_list = SettingsList::<NtscEffect>::new();
+            let settings_list_easy = SettingsList::<EasyMode>::new();
             let (
                 settings,
                 easy_mode_settings,
@@ -179,8 +179,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 )
             } else {
                 (
-                    NtscEffectFullSettings::default(),
-                    EasyModeFullSettings::default(),
+                    NtscEffect::default(),
+                    EasyMode::default(),
                     true,
                     RenderSettings::default(),
                     VideoScaleState::default(),
@@ -210,10 +210,10 @@ impl NtscApp {
 
     fn new(
         ctx: egui::Context,
-        settings_list: SettingsList<NtscEffectFullSettings>,
-        settings_list_easy: SettingsList<EasyModeFullSettings>,
-        effect_settings: NtscEffectFullSettings,
-        easy_mode_settings: EasyModeFullSettings,
+        settings_list: SettingsList<NtscEffect>,
+        settings_list_easy: SettingsList<EasyMode>,
+        effect_settings: NtscEffect,
+        easy_mode_settings: EasyMode,
         easy_mode_enabled: bool,
         render_settings: RenderSettings,
         scale_settings: VideoScaleState,
@@ -319,10 +319,7 @@ impl NtscApp {
         let video_sink = gstreamer::ElementFactory::make("eguisink")
             .property("texture", tex_sink)
             .property("ctx", egui_ctx)
-            .property(
-                "settings",
-                NtscFilterSettings((&self.effect_settings).into()),
-            )
+            .property("settings", NtscFilterSettings(self.effect_settings.clone()))
             .property(
                 "preview-mode",
                 Self::sink_preview_mode(&self.effect_preview),
@@ -510,11 +507,11 @@ impl NtscApp {
             } else {
                 self.effect_settings.clone()
             };
-            egui_sink.set_property("settings", NtscFilterSettings(effect_settings.into()));
+            egui_sink.set_property("settings", NtscFilterSettings(effect_settings));
         }
     }
 
-    pub fn set_effect_settings(&mut self, effect_settings: NtscEffectFullSettings) {
+    pub fn set_effect_settings(&mut self, effect_settings: NtscEffect) {
         self.effect_settings = effect_settings;
         self.update_effect();
     }
@@ -990,7 +987,7 @@ impl NtscApp {
                     }
 
                     if ui.button("Reset").clicked() {
-                        self.set_effect_settings(NtscEffectFullSettings::default());
+                        self.set_effect_settings(NtscEffect::default());
                         self.presets_state.deselect_preset();
                     }
                 });
@@ -1628,7 +1625,7 @@ impl NtscApp {
                                             }),
                                             output_path: handle.into(),
                                             interlacing: RenderInterlaceMode::Progressive,
-                                            effect_settings: (&app.effect_settings).into(),
+                                            effect_settings: app.effect_settings.clone(),
                                         },
                                     );
                                     if let Ok(job) = res {

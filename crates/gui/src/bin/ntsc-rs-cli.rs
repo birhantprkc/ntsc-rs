@@ -21,7 +21,7 @@ use color_eyre::eyre::{Report, Result, WrapErr};
 use console::{StyledObject, Term, measure_text_width, style, truncate_str};
 use gstreamer::ClockTime;
 use ntsc_rs::{
-    NtscEffectFullSettings,
+    NtscEffect,
     settings::{ParseSettingsError, SettingsList},
 };
 use ntsc_rs_gui::{
@@ -45,9 +45,9 @@ use ntsc_rs_gui::{
 };
 
 fn parse_settings(
-    settings_list: &SettingsList<NtscEffectFullSettings>,
+    settings_list: &SettingsList<NtscEffect>,
     json: &str,
-) -> Result<NtscEffectFullSettings, ParseSettingsError> {
+) -> Result<NtscEffect, ParseSettingsError> {
     settings_list.from_json(json)
 }
 
@@ -150,7 +150,7 @@ macro_rules! warn {
 
 pub fn main() -> Result<()> {
     color_eyre::install()?;
-    let settings_list = SettingsList::<NtscEffectFullSettings>::new();
+    let settings_list = SettingsList::<NtscEffect>::new();
     let settings_list_for_parser = settings_list.clone();
 
     let parse_standard_settings = move |json: &str| parse_settings(&settings_list_for_parser, json);
@@ -340,7 +340,7 @@ pub fn main() -> Result<()> {
                 .wrap_err("Settings file is not valid UTF-8")?,
         )
         .wrap_err("Failed to parse settings file")?
-    } else if let Some(settings) = matches.get_one::<NtscEffectFullSettings>("settings-json") {
+    } else if let Some(settings) = matches.get_one::<NtscEffect>("settings-json") {
         settings.clone()
     } else {
         Default::default()
@@ -507,7 +507,7 @@ pub fn main() -> Result<()> {
             },
             output_path: output_path.clone(),
             interlacing: RenderInterlaceMode::from_use_field(settings.use_field, interlace),
-            effect_settings: settings.into(),
+            effect_settings: settings,
         },
         &StillImageSettings {
             framerate: gstreamer::Fraction::from_integer(framerate as i32),

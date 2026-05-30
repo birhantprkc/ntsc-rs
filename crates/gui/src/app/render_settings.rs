@@ -1,7 +1,7 @@
 use std::{ops::RangeInclusive, path::PathBuf};
 
 use gstreamer::{ClockTime, Fraction};
-use ntsc_rs::{NtscEffect, NtscEffectFullSettings, settings::UseField};
+use ntsc_rs::{NtscEffect, settings::UseField};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,7 +163,7 @@ pub struct RenderPipelineSettings {
 
 impl RenderPipelineSettings {
     pub fn from_gui_settings(
-        effect_settings: &NtscEffectFullSettings,
+        effect_settings: &NtscEffect,
         render_settings: &RenderSettings,
     ) -> Self {
         Self {
@@ -173,7 +173,7 @@ impl RenderPipelineSettings {
                 effect_settings.use_field,
                 render_settings.interlaced && render_settings.interlaced_output_allowed(),
             ),
-            effect_settings: effect_settings.into(),
+            effect_settings: effect_settings.clone(),
         }
     }
 }
