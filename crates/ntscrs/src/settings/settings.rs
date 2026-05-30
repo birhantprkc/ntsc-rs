@@ -682,7 +682,7 @@ impl<T: Settings> SettingsList<T> {
         mut dest: impl std::io::Write,
     ) -> Result<(), SerializeSettingsError> {
         self.stream_json(settings, |fragment| {
-            dest.write(fragment.as_bytes())?;
+            dest.write_all(fragment.as_bytes())?;
             Ok(())
         })
     }
