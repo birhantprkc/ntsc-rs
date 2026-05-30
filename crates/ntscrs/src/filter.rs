@@ -321,8 +321,13 @@ impl TransferFunction {
             }
         }
 
-        // We need to handle some trailing samples; we assume the last sample's value extends past the end of the signal
-        for i in width..width + delay {
+        // We need to handle some trailing samples; we assume the last sample's value extends past the end of the
+        // signal. We start at `delay.max(width)` rather than `width`: when `delay > width`, the iterations in
+        // `width..delay` are no-write "warmup" steps that the first loop already performed (its range `0..delay` covers
+        // them), so starting at `width` here would process them a second time and over-advance the filter state.
+        // Starting at `delay.max(width)` makes the three loops cover each of the `width + delay` steps exactly once,
+        // and guarantees `i >= delay`, so `i - delay` is always a valid write index.
+        for i in delay.max(width)..width + delay {
             for j in 0..ROWS {
                 let filt_sample = filter_single_sample(
                     simd,
@@ -332,11 +337,8 @@ impl TransferFunction {
                     &mut z[j],
                 );
 
-                // i - delay may be < 0 if delay >= width
-                if i >= delay {
-                    unsafe {
-                        *signal[j].get_unchecked_mut(i - delay) = filt_sample;
-                    }
+                unsafe {
+                    *signal[j].get_unchecked_mut(i - delay) = filt_sample;
                 }
             }
         }
@@ -402,5 +404,118 @@ impl core::ops::Mul<&TransferFunction> for &TransferFunction {
         let den = &trim_zeros(&den)[1..];
 
         TransferFunction::new(num, den)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::{format, vec, vec::Vec};
+    use fearless_simd::Level;
+
+    /// Run the SIMD filter path over a copy of `rows`, returning the filtered output. `Level::new()`
+    /// uses SIMD on hosts that support it (and otherwise falls back to scalar, in which case this
+    /// simply re-checks the scalar path against the reference below).
+    fn apply_simd<const ROWS: usize>(
+        tf: &TransferFunction,
+        rows: &[Vec<f32>; ROWS],
+        initial: [f32; ROWS],
+        delay: usize,
+    ) -> [Vec<f32>; ROWS] {
+        let mut data = rows.clone();
+        let mut refs = data.each_mut().map(|v| v.as_mut_slice());
+        tf.filter_signal_in_place(Level::new(), &mut refs, initial, delay);
+        data
+    }
+
+    /// Independent scalar reference: the straightforward `width + delay` step loop, reusing the
+    /// filter's own per-sample math. Each step `i` reads `signal[min(i, width - 1)]` (clamping the
+    /// tail to the last sample) and, once `i >= delay`, writes the result back `delay` samples
+    /// earlier. This is the behavior the SIMD path must reproduce regardless of how `delay` and
+    /// `width` compare.
+    fn reference<const ROWS: usize>(
+        tf: &TransferFunction,
+        rows: &[Vec<f32>; ROWS],
+        initial: [f32; ROWS],
+        delay: usize,
+    ) -> [Vec<f32>; ROWS] {
+        let (num, den) = tf.coeffs();
+        let filter_len = tf.len();
+        let mut data = rows.clone();
+        for r in 0..ROWS {
+            let width = data[r].len();
+            if width == 0 {
+                continue;
+            }
+            let mut z = vec![0.0f32; filter_len];
+            tf.initial_condition_into(initial[r], &mut z);
+            for i in 0..(width + delay) {
+                let sample = data[r][i.min(width - 1)];
+                let filt = TransferFunction::filter_sample(filter_len, num, den, &mut z, sample);
+                if i >= delay {
+                    data[r][i - delay] = filt;
+                }
+            }
+        }
+        data
+    }
+
+    /// Compare the SIMD path against the scalar reference for a deterministic signal. They won't be
+    /// bit-identical because the SIMD path uses fused multiply-add, so a small tolerance is allowed;
+    /// the bug this guards against (over-advancing the filter state when `delay > width`) produces
+    /// gross differences far exceeding it.
+    fn check<const ROWS: usize>(tf: &TransferFunction, width: usize, delay: usize) {
+        let rows: [Vec<f32>; ROWS] = core::array::from_fn(|r| {
+            (0..width)
+                .map(|i| ((i * 31 + r * 7 + 3) % 17) as f32 - 8.0)
+                .collect()
+        });
+        let initial: [f32; ROWS] = core::array::from_fn(|r| r as f32 * 0.5 - 0.5);
+
+        let simd = apply_simd(tf, &rows, initial, delay);
+        let scalar = reference(tf, &rows, initial, delay);
+
+        for (r, (row_simd, row_scalar)) in simd.iter().zip(&scalar).enumerate() {
+            assert_eq!(row_simd.len(), row_scalar.len());
+            for (i, (x, y)) in row_simd.iter().zip(row_scalar).enumerate() {
+                assert!(
+                    (x - y).abs() <= 1e-3,
+                    "{}",
+                    format!(
+                        "SIMD result differs from scalar at ROWS={ROWS}, width={width}, \
+                         delay={delay}, row={r}, idx={i}: {x} vs {y}\nsimd:   {row_simd:?}\nscalar: {row_scalar:?}"
+                    )
+                );
+            }
+        }
+    }
+
+    /// Sweep filter sizes, row counts, widths, and delays.
+    #[test]
+    fn simd_matches_scalar_across_width_and_delay() {
+        let filters = [
+            TransferFunction::new(&[0.6, 0.3], &[-0.4]),
+            TransferFunction::new(&[0.2, 0.5, 0.3], &[-0.3, 0.1]),
+            TransferFunction::new(&[0.1, 0.2, 0.3, 0.2], &[-0.2, 0.1, -0.05]),
+        ];
+        for tf in &filters {
+            for width in 0..=10 {
+                for delay in 0..=10 {
+                    check::<1>(tf, width, delay);
+                    check::<2>(tf, width, delay);
+                    check::<4>(tf, width, delay);
+                }
+            }
+        }
+    }
+
+    /// Focused regression test for the `width < delay` case.
+    #[test]
+    fn simd_matches_scalar_when_width_less_than_delay() {
+        let tf = TransferFunction::new(&[0.5, 0.5], &[-0.5]);
+        check::<1>(&tf, 2, 5);
+        check::<2>(&tf, 3, 8);
+        check::<4>(&tf, 1, 4);
+        check::<2>(&tf, 1, 10);
     }
 }
