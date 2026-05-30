@@ -1,7 +1,7 @@
-use std::{borrow::Cow, collections::HashMap};
+use alloc::{borrow::Cow, boxed::Box, vec};
 
 use crate::{
-    settings::{JsonValue, SettingsBlock},
+    settings::{JsonValue, SettingsBlock, SortedMap},
     yiq_fielding::YiqField,
 };
 use ntsc_rs_macros::FullSettings;
@@ -1271,7 +1271,7 @@ impl SettingsList<NtscEffectFullSettings> {
     }
 
     fn from_ntscqt_json(
-        json: &HashMap<Cow<'_, str>, JsonValue>,
+        json: &SortedMap<Cow<'_, str>, JsonValue>,
     ) -> Result<NtscEffectFullSettings, ParseSettingsError> {
         let mut settings = NtscEffectFullSettings::default();
         settings.use_field = UseField::Upper;

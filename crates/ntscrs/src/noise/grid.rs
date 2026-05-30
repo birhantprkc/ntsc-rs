@@ -3,6 +3,9 @@
 
 use fearless_simd::prelude::*;
 
+#[cfg(not(feature = "std"))]
+use core_maths::CoreFloat as _;
+
 /// A distribution of points across a space
 pub trait Grid<const DIMENSION: usize> {
     /// Array containing a `T` per dimension per vertex

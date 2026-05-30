@@ -1,3 +1,8 @@
+use alloc::{boxed::Box, vec};
+
+#[cfg(not(feature = "std"))]
+use core_maths::CoreFloat as _;
+
 use ntsc_rs_macros::FullSettings;
 
 use super::{

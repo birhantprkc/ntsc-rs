@@ -14,6 +14,7 @@ use after_effects::{self as ae};
 use handle::SliceHandle;
 use ntsc_rs::{
     NtscEffect, NtscEffectFullSettings,
+    ctx::Context,
     settings::{
         EnumValue, SettingDescriptor, SettingField, SettingID, SettingKind, Settings, SettingsList,
         standard::UseField,
@@ -27,12 +28,14 @@ use window_handle::WindowAndDisplayHandle;
 
 struct Plugin {
     settings: SettingsList<NtscEffectFullSettings>,
+    ctx: Context,
 }
 
 impl Default for Plugin {
     fn default() -> Self {
         Self {
             settings: SettingsList::<NtscEffectFullSettings>::new(),
+            ctx: Context::new(),
         }
     }
 }
@@ -441,11 +444,17 @@ impl Plugin {
         match in_pixel_format {
             NtscrsPixelFormat::Xrgb8 => unsafe {
                 let data = transmute_slice::<u8, MaybeUninit<u8>>(in_layer.buffer());
-                view.set_from_strided_buffer_maybe_uninit::<Xrgb, u8, _>(data, src_blit_info, ());
+                view.set_from_strided_buffer_maybe_uninit::<Xrgb, u8, _>(
+                    &self.ctx,
+                    data,
+                    src_blit_info,
+                    (),
+                );
             },
             NtscrsPixelFormat::Xrgb16AE => unsafe {
                 let data = transmute_slice::<u8, MaybeUninit<AfterEffectsU16>>(in_layer.buffer());
                 view.set_from_strided_buffer_maybe_uninit::<Xrgb, AfterEffectsU16, _>(
+                    &self.ctx,
                     data,
                     src_blit_info,
                     (),
@@ -453,19 +462,39 @@ impl Plugin {
             },
             NtscrsPixelFormat::Xrgb32f => unsafe {
                 let data = transmute_slice::<u8, MaybeUninit<f32>>(in_layer.buffer());
-                view.set_from_strided_buffer_maybe_uninit::<Xrgb, f32, _>(data, src_blit_info, ());
+                view.set_from_strided_buffer_maybe_uninit::<Xrgb, f32, _>(
+                    &self.ctx,
+                    data,
+                    src_blit_info,
+                    (),
+                );
             },
             NtscrsPixelFormat::Bgrx8 => unsafe {
                 let data = transmute_slice::<u8, MaybeUninit<u8>>(in_layer.buffer());
-                view.set_from_strided_buffer_maybe_uninit::<Bgrx, u8, _>(data, src_blit_info, ());
+                view.set_from_strided_buffer_maybe_uninit::<Bgrx, u8, _>(
+                    &self.ctx,
+                    data,
+                    src_blit_info,
+                    (),
+                );
             },
             NtscrsPixelFormat::Bgrx16 => unsafe {
                 let data = transmute_slice::<u8, MaybeUninit<u16>>(in_layer.buffer());
-                view.set_from_strided_buffer_maybe_uninit::<Bgrx, u16, _>(data, src_blit_info, ());
+                view.set_from_strided_buffer_maybe_uninit::<Bgrx, u16, _>(
+                    &self.ctx,
+                    data,
+                    src_blit_info,
+                    (),
+                );
             },
             NtscrsPixelFormat::Bgrx32f => unsafe {
                 let data = transmute_slice::<u8, MaybeUninit<f32>>(in_layer.buffer());
-                view.set_from_strided_buffer_maybe_uninit::<Bgrx, f32, _>(data, src_blit_info, ());
+                view.set_from_strided_buffer_maybe_uninit::<Bgrx, f32, _>(
+                    &self.ctx,
+                    data,
+                    src_blit_info,
+                    (),
+                );
             },
         }
 
@@ -478,13 +507,14 @@ impl Plugin {
         } else {
             [in_data.downsample_x(), in_data.downsample_y()].map(|factor| factor.into())
         };
-        effect.apply_effect_to_yiq(&mut view, frame_num, scale_factors);
+        effect.apply_effect_to_yiq(&self.ctx, &mut view, frame_num, scale_factors);
 
         match out_pixel_format {
             NtscrsPixelFormat::Xrgb8 => {
                 let data =
                     unsafe { transmute_slice_mut::<u8, MaybeUninit<u8>>(out_layer.buffer_mut()) };
                 view.write_to_strided_buffer_maybe_uninit::<Xrgb, u8, _>(
+                    &self.ctx,
                     data,
                     dst_blit_info,
                     DeinterlaceMode::Bob,
@@ -496,6 +526,7 @@ impl Plugin {
                     transmute_slice_mut::<u8, MaybeUninit<AfterEffectsU16>>(out_layer.buffer_mut())
                 };
                 view.write_to_strided_buffer_maybe_uninit::<Xrgb, AfterEffectsU16, _>(
+                    &self.ctx,
                     data,
                     dst_blit_info,
                     DeinterlaceMode::Bob,
@@ -506,6 +537,7 @@ impl Plugin {
                 let data =
                     unsafe { transmute_slice_mut::<u8, MaybeUninit<f32>>(out_layer.buffer_mut()) };
                 view.write_to_strided_buffer_maybe_uninit::<Xrgb, f32, _>(
+                    &self.ctx,
                     data,
                     dst_blit_info,
                     DeinterlaceMode::Bob,
@@ -516,6 +548,7 @@ impl Plugin {
                 let data =
                     unsafe { transmute_slice_mut::<u8, MaybeUninit<u8>>(out_layer.buffer_mut()) };
                 view.write_to_strided_buffer_maybe_uninit::<Bgrx, u8, _>(
+                    &self.ctx,
                     data,
                     dst_blit_info,
                     DeinterlaceMode::Bob,
@@ -526,6 +559,7 @@ impl Plugin {
                 let data =
                     unsafe { transmute_slice_mut::<u8, MaybeUninit<u16>>(out_layer.buffer_mut()) };
                 view.write_to_strided_buffer_maybe_uninit::<Bgrx, u16, _>(
+                    &self.ctx,
                     data,
                     dst_blit_info,
                     DeinterlaceMode::Bob,
@@ -536,6 +570,7 @@ impl Plugin {
                 let data =
                     unsafe { transmute_slice_mut::<u8, MaybeUninit<f32>>(out_layer.buffer_mut()) };
                 view.write_to_strided_buffer_maybe_uninit::<Bgrx, f32, _>(
+                    &self.ctx,
                     data,
                     dst_blit_info,
                     DeinterlaceMode::Bob,

@@ -1,4 +1,7 @@
-use std::ops::{Add, Mul, Range, Sub};
+use core::ops::{Add, Mul, Range, Sub};
+
+#[cfg(not(feature = "std"))]
+use core_maths::CoreFloat as _;
 
 /// Lambda parameter for generating a geometric distribution where each trial has probability `p`.
 pub fn geometric_lambda(p: f64) -> f64 {

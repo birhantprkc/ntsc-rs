@@ -1,9 +1,7 @@
-use std::mem::{self, MaybeUninit};
+use alloc::{boxed::Box, vec};
+use core::mem::{self, MaybeUninit};
 
-use crate::{
-    settings::UseField,
-    thread_pool::{ZipChunks, with_thread_pool},
-};
+use crate::{ctx::Context, settings::UseField, thread_pool::ZipChunks};
 
 use fearless_simd::{Level, dispatch, f32x4, i32x4, prelude::*};
 
@@ -294,7 +292,7 @@ impl_pix_fmt!(Rgb, 3, (0, 1, 2, None));
 impl_pix_fmt!(Bgr, 3, (2, 1, 0, None));
 
 pub const fn pixel_bytes_for<S: PixelFormat, T: Normalize>() -> usize {
-    S::NUM_COMPONENTS * std::mem::size_of::<T>()
+    S::NUM_COMPONENTS * core::mem::size_of::<T>()
 }
 
 /// How to handle writing back fields that we *didn't* process if we used YiqField::Upper or YiqField::Lower.
@@ -416,14 +414,14 @@ pub struct YiqView<'a> {
 
 fn slice_to_maybe_uninit<T>(slice: &[T]) -> &[MaybeUninit<T>] {
     // Safety: we know these are all initialized, so it's fine to transmute into a type that makes fewer assumptions
-    unsafe { std::slice::from_raw_parts(slice.as_ptr() as _, slice.len()) }
+    unsafe { core::slice::from_raw_parts(slice.as_ptr() as _, slice.len()) }
 }
 
 /// # Safety:
 /// - You must only write initialized values into the slice.
 unsafe fn slice_to_maybe_uninit_mut<T>(slice: &mut [T]) -> &mut [MaybeUninit<T>] {
     // Safety: we know these are all initialized, so it's fine to transmute into a type that makes fewer assumptions
-    unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr() as _, slice.len()) }
+    unsafe { core::slice::from_raw_parts_mut(slice.as_mut_ptr() as _, slice.len()) }
 }
 
 pub trait PixelTransform: Send + Sync + Copy {
@@ -504,17 +502,18 @@ impl<'a> YiqView<'a> {
         F: PixelTransform,
     >(
         &mut self,
+        ctx: &Context,
         buf: &[MaybeUninit<T>],
         blit_info: BlitInfo,
         pixel_transform: F,
     ) {
         let num_components = S::NUM_COMPONENTS;
         assert_eq!(
-            blit_info.row_bytes % std::mem::size_of::<T>(),
+            blit_info.row_bytes % core::mem::size_of::<T>(),
             0,
             "Rowbytes not aligned to datatype"
         );
-        let row_length = blit_info.row_bytes / std::mem::size_of::<T>();
+        let row_length = blit_info.row_bytes / core::mem::size_of::<T>();
         assert!(num_components >= 3);
         assert!(
             row_length * S::NUM_COMPONENTS >= blit_info.rect.width(),
@@ -535,7 +534,7 @@ impl<'a> YiqView<'a> {
             src_row_idx: usize,
             pixel_transform: F,
         ) {
-            let row_length = blit_info.row_bytes / std::mem::size_of::<T>();
+            let row_length = blit_info.row_bytes / core::mem::size_of::<T>();
             let src_offset = src_row_idx * row_length;
             let (r_idx, g_idx, b_idx, ..) = P::RGBA_INDICES;
             for idx in 0..blit_info.rect.width() {
@@ -577,11 +576,10 @@ impl<'a> YiqView<'a> {
             dispatch!(level, simd => unsafe { blit_row_simd_inner::<_, P, T, F>(simd, y, i, q, buf, blit_info, src_row_idx, pixel_transform) })
         }
 
-        let level = Level::new();
         match self.field {
             YiqField::Upper | YiqField::Lower | YiqField::Both => {
                 let Self { y, i, q, .. } = self;
-                with_thread_pool(|| {
+                ctx.thread_pool.install(|| {
                     let (width, _) = self.dimensions;
                     let mut field = self.field;
 
@@ -619,7 +617,7 @@ impl<'a> YiqView<'a> {
                         }
                         unsafe {
                             blit_row_simd::<S, T, F>(
-                                level,
+                                ctx.level,
                                 y,
                                 i,
                                 q,
@@ -639,6 +637,7 @@ impl<'a> YiqView<'a> {
                     upper.field = YiqField::Upper;
                     unsafe {
                         upper.set_from_strided_buffer_maybe_uninit::<S, T, F>(
+                            ctx,
                             buf,
                             blit_info,
                             pixel_transform,
@@ -650,6 +649,7 @@ impl<'a> YiqView<'a> {
                     lower.field = YiqField::Lower;
                     unsafe {
                         lower.set_from_strided_buffer_maybe_uninit::<S, T, F>(
+                            ctx,
                             buf,
                             blit_info,
                             pixel_transform,
@@ -664,6 +664,7 @@ impl<'a> YiqView<'a> {
                     upper.field = YiqField::Upper;
                     unsafe {
                         upper.set_from_strided_buffer_maybe_uninit::<S, T, F>(
+                            ctx,
                             buf,
                             blit_info,
                             pixel_transform,
@@ -675,6 +676,7 @@ impl<'a> YiqView<'a> {
                     lower.field = YiqField::Lower;
                     unsafe {
                         lower.set_from_strided_buffer_maybe_uninit::<S, T, F>(
+                            ctx,
                             buf,
                             blit_info,
                             pixel_transform,
@@ -689,6 +691,7 @@ impl<'a> YiqView<'a> {
     /// to the pixels beforehand.
     pub fn set_from_strided_buffer<S: PixelFormat, T: Normalize, F: PixelTransform>(
         &mut self,
+        ctx: &Context,
         buf: &[T],
         blit_info: BlitInfo,
         pixel_transform: F,
@@ -696,6 +699,7 @@ impl<'a> YiqView<'a> {
         // Safety: We know this data is valid because it's a slice.
         unsafe {
             self.set_from_strided_buffer_maybe_uninit::<S, T, F>(
+                ctx,
                 slice_to_maybe_uninit(buf),
                 blit_info,
                 pixel_transform,
@@ -708,6 +712,7 @@ impl<'a> YiqView<'a> {
     /// buffer which may not be initialized beforehand.
     pub fn write_to_strided_buffer_maybe_uninit<S: PixelFormat, T: Normalize, F: PixelTransform>(
         &self,
+        ctx: &Context,
         dst: &mut [MaybeUninit<T>],
         mut blit_info: BlitInfo,
         deinterlace_mode: DeinterlaceMode,
@@ -729,12 +734,12 @@ impl<'a> YiqView<'a> {
 
         assert!(S::NUM_COMPONENTS >= 3);
         assert!(
-            blit_info.row_bytes / std::mem::size_of::<T>() * S::NUM_COMPONENTS
+            blit_info.row_bytes / core::mem::size_of::<T>() * S::NUM_COMPONENTS
                 >= blit_info.rect.width(),
             "Blit rectangle width exceeds rowbytes"
         );
         assert_eq!(
-            blit_info.row_bytes % std::mem::size_of::<T>(),
+            blit_info.row_bytes % core::mem::size_of::<T>(),
             0,
             "Rowbytes not aligned to datatype"
         );
@@ -954,9 +959,8 @@ impl<'a> YiqView<'a> {
             dispatch!(level, simd => write_single_row_simd_inner::<_, P, T, F>(simd, view, blit_info, deinterlace_mode, dst_row_idx, dst_row, pixel_transform))
         }
 
-        let level = Level::new();
-        with_thread_pool(|| {
-            let row_length = blit_info.row_bytes / std::mem::size_of::<T>();
+        ctx.thread_pool.install(|| {
+            let row_length = blit_info.row_bytes / core::mem::size_of::<T>();
 
             let skip_rows = blit_info.destination.1;
             let take_rows = blit_info.rect.height();
@@ -967,7 +971,7 @@ impl<'a> YiqView<'a> {
 
             chunks.par_for_each(|dst_row_idx, [dst_row]| {
                 write_single_row_simd::<S, T, F>(
-                    level,
+                    ctx.level,
                     self,
                     &blit_info,
                     deinterlace_mode,
@@ -981,12 +985,14 @@ impl<'a> YiqView<'a> {
 
     pub fn write_to_strided_buffer<S: PixelFormat, T: Normalize, F: PixelTransform>(
         &self,
+        ctx: &Context,
         dst: &mut [T],
         blit_info: BlitInfo,
         deinterlace_mode: DeinterlaceMode,
         pixel_transform: F,
     ) {
         self.write_to_strided_buffer_maybe_uninit::<S, T, F>(
+            ctx,
             unsafe { slice_to_maybe_uninit_mut(dst) },
             blit_info,
             deinterlace_mode,
@@ -1049,6 +1055,7 @@ pub struct YiqOwned {
 
 impl YiqOwned {
     pub fn from_strided_buffer<S: PixelFormat, T: Normalize>(
+        ctx: &Context,
         buf: &[T],
         row_bytes: usize,
         width: usize,
@@ -1059,6 +1066,7 @@ impl YiqOwned {
         let mut view = YiqView::from_parts(&mut data, (width, height), field);
 
         view.set_from_strided_buffer::<S, T, _>(
+            ctx,
             buf,
             BlitInfo::from_full_frame(width, height, row_bytes),
             (),

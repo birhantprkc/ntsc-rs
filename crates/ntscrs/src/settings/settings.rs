@@ -3,14 +3,16 @@
 //! duplicate a bunch of code.
 // TODO: replace with a bunch of metaprogramming macro magic?
 
-use std::{
-    borrow::Cow,
-    collections::HashMap,
+use core::{
+    borrow::Borrow,
     error::Error,
     fmt::{Display, Write as _},
+    hash::{Hash, Hasher},
     num::{ParseFloatError, ParseIntError},
     ops::RangeInclusive,
 };
+
+use alloc::{borrow::Cow, boxed::Box, string::String, vec, vec::Vec};
 
 use hifijson::{
     Expect, SliceLexer,
@@ -188,8 +190,8 @@ pub struct SettingID<T: Settings> {
 
 // We can't use derive here because of the type parameter:
 // https://github.com/rust-lang/rust/issues/26925
-impl<T: Settings> std::hash::Hash for SettingID<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl<T: Settings> Hash for SettingID<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
         self.name.hash(state);
         self.get.hash(state);
@@ -226,7 +228,7 @@ macro_rules! setting_id {
             |settings, value| {
                 settings.$($field_path).+ = $crate::settings::SettingField::downcast(&value).ok_or_else(|| $crate::settings::GetSetFieldError::TypeMismatch {
                     actual_type: value.type_name(),
-                    requested_type: std::any::type_name_of_val(&settings.$($field_path).+)
+                    requested_type: core::any::type_name_of_val(&settings.$($field_path).+)
                 })?;
                 Ok(())
             }
@@ -273,7 +275,7 @@ pub enum GetSetFieldError {
 }
 
 impl Display for GetSetFieldError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             GetSetFieldError::TypeMismatch {
                 actual_type,
@@ -296,7 +298,7 @@ pub trait Settings: Default {
         let value = (id.get)(self);
         SettingField::downcast(&value).ok_or_else(|| GetSetFieldError::TypeMismatch {
             actual_type: value.type_name(),
-            requested_type: std::any::type_name::<T>(),
+            requested_type: core::any::type_name::<T>(),
         })
     }
 
@@ -340,7 +342,7 @@ pub enum ParseSettingsError {
 }
 
 impl Display for ParseSettingsError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             ParseSettingsError::InvalidJSON(e) => e.fmt(f),
             ParseSettingsError::ParseFloat(e) => e.fmt(f),
@@ -458,6 +460,41 @@ impl FromValue for bool {
     }
 }
 
+/// Sorted key-value map for JSON parsing. Items are indexed via binary search, and the last item wins in the event of a
+/// tie.
+pub(super) struct SortedMap<K: Ord, V> {
+    items: Vec<(K, V)>,
+}
+
+impl<K: Ord, V> SortedMap<K, V> {
+    pub fn new(mut items: Vec<(K, V)>) -> Self {
+        items.sort_by(|a, b| a.0.cmp(&b.0));
+        Self { items }
+    }
+
+    pub fn get<Q>(&self, key: &Q) -> Option<&V>
+    where
+        K: Borrow<Q> + Ord,
+        Q: Ord + ?Sized,
+    {
+        // binary_search_by returns an arbitrary result if there are multiple matches; we want to match the behavior of
+        // a hash map (last inserted wins) and return the last one.
+        let upper_bound = self.items.partition_point(|(k, _)| k.borrow() <= key);
+        let (item_k, item_v) = self.items.get(upper_bound.checked_sub(1)?)?;
+        (item_k.borrow() == key).then_some(item_v)
+    }
+
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
+    where
+        K: Borrow<Q> + Ord,
+        Q: Ord + ?Sized,
+    {
+        self.items
+            .binary_search_by(|a| a.0.borrow().cmp(key))
+            .is_ok()
+    }
+}
+
 /// Convenience trait for asserting the "shape" of the JSON we're parsing is what we expect.
 pub(super) trait GetAndExpect {
     fn get_and_expect<T: FromValue + Clone>(
@@ -466,7 +503,7 @@ pub(super) trait GetAndExpect {
     ) -> Result<Option<T>, ParseSettingsError>;
 }
 
-impl<'a> GetAndExpect for HashMap<Cow<'a, str>, JsonValue<'a>> {
+impl<'a> GetAndExpect for SortedMap<Cow<'a, str>, JsonValue<'a>> {
     fn get_and_expect<T: FromValue + Clone>(
         &self,
         key: &str,
@@ -483,14 +520,22 @@ pub struct SettingsList<T: Settings> {
 
 #[derive(Debug)]
 pub enum SerializeSettingsError {
-    InvalidKeyCharacter { key: &'static str },
-    InvalidFloat { key: &'static str, value: f32 },
-    FormatError(std::fmt::Error),
+    InvalidKeyCharacter {
+        key: &'static str,
+    },
+    InvalidFloat {
+        key: &'static str,
+        value: f32,
+    },
+    FormatError(core::fmt::Error),
+    #[cfg(feature = "std")]
     IoError(std::io::Error),
+    #[cfg(not(feature = "std"))]
+    IoError,
 }
 
-impl std::fmt::Display for SerializeSettingsError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for SerializeSettingsError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             SerializeSettingsError::InvalidKeyCharacter { key } => {
                 write!(f, "invalid character in key \"{key}\"")
@@ -499,19 +544,26 @@ impl std::fmt::Display for SerializeSettingsError {
                 write!(f, "invalid float value {value} for setting \"{key}\"")
             }
             SerializeSettingsError::FormatError(e) => write!(f, "error formatting value: {e}"),
+            #[cfg(feature = "std")]
             SerializeSettingsError::IoError(e) => write!(f, "I/O error: {e}"),
+            #[cfg(not(feature = "std"))]
+            SerializeSettingsError::IoError => {
+                // This can't happen but panics increase code size
+                write!(f, "I/O error")
+            }
         }
     }
 }
 
-impl std::error::Error for SerializeSettingsError {}
+impl Error for SerializeSettingsError {}
 
-impl From<std::fmt::Error> for SerializeSettingsError {
-    fn from(value: std::fmt::Error) -> Self {
+impl From<core::fmt::Error> for SerializeSettingsError {
+    fn from(value: core::fmt::Error) -> Self {
         Self::FormatError(value)
     }
 }
 
+#[cfg(feature = "std")]
 impl From<std::io::Error> for SerializeSettingsError {
     fn from(value: std::io::Error) -> Self {
         Self::IoError(value)
@@ -567,10 +619,10 @@ fn parse<'a>(
 fn parse_root_object<'a>(
     next: u8,
     lexer: &mut SliceLexer<'a>,
-) -> Result<HashMap<Cow<'a, str>, JsonValue<'a>>, hifijson::Error> {
+) -> Result<SortedMap<Cow<'a, str>, JsonValue<'a>>, hifijson::Error> {
     match next {
         b'{' => Ok({
-            let mut obj = HashMap::new();
+            let mut entries = Vec::new();
             lexer
                 .discarded()
                 .seq(b'}', SliceLexer::ws_peek, |next, lexer| {
@@ -581,11 +633,11 @@ fn parse_root_object<'a>(
                         .ok_or(Expect::Colon)?;
                     let value = parse(lexer.ws_peek().ok_or(Expect::Value)?, lexer)?;
                     if let Some(value) = value {
-                        obj.insert(key, value);
+                        entries.push((key, value));
                     }
                     Ok::<_, hifijson::Error>(())
                 })?;
-            obj
+            SortedMap::new(entries)
         }),
         _ => Err(Expect::Value)?,
     }
@@ -593,7 +645,7 @@ fn parse_root_object<'a>(
 
 pub(super) fn parse_json<'a>(
     json: &'a str,
-) -> Result<HashMap<Cow<'a, str>, JsonValue<'a>>, ParseSettingsError> {
+) -> Result<SortedMap<Cow<'a, str>, JsonValue<'a>>, ParseSettingsError> {
     let mut lexer = SliceLexer::new(json.as_bytes());
     Ok(lexer.exactly_one(Lex::ws_peek, parse_root_object)?)
 }
@@ -668,7 +720,7 @@ impl<T: Settings> SettingsList<T> {
     pub fn write_json_to_fmt(
         &self,
         settings: &T,
-        mut dest: impl std::fmt::Write,
+        mut dest: impl core::fmt::Write,
     ) -> Result<(), SerializeSettingsError> {
         self.stream_json(settings, |fragment| {
             dest.write_str(fragment)?;
@@ -676,6 +728,7 @@ impl<T: Settings> SettingsList<T> {
         })
     }
 
+    #[cfg(feature = "std")]
     pub fn write_json_to_io(
         &self,
         settings: &T,
@@ -696,7 +749,7 @@ impl<T: Settings> SettingsList<T> {
     /// Recursive method for reading the settings within a given list of descriptors (either top-level or within a
     /// group) from a given JSON map and using them to update the given settings struct.
     pub(super) fn settings_from_json(
-        json: &HashMap<Cow<'_, str>, JsonValue<'_>>,
+        json: &SortedMap<Cow<'_, str>, JsonValue<'_>>,
         descriptors: &[SettingDescriptor<T>],
         settings: &mut T,
     ) -> Result<(), ParseSettingsError> {

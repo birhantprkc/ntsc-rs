@@ -1,10 +1,12 @@
-pub fn with_thread_pool<T: Send>(op: impl (FnOnce() -> T) + Send + Sync) -> T {
+pub struct ThreadPool {
     #[cfg(all(feature = "rayon", not(target_arch = "wasm32")))]
-    {
-        use std::sync::OnceLock;
-        static POOL: OnceLock<rayon_core::ThreadPool> = OnceLock::new();
+    pool: rayon_core::ThreadPool,
+}
 
-        let pool = POOL.get_or_init(|| {
+impl ThreadPool {
+    pub fn new() -> Self {
+        #[cfg(all(feature = "rayon", not(target_arch = "wasm32")))]
+        {
             // On Windows debug builds, the stack overflows with the default stack size
             let mut pool = rayon_core::ThreadPoolBuilder::new().stack_size(2 * 1024 * 1024);
 
@@ -14,16 +16,33 @@ pub fn with_thread_pool<T: Send>(op: impl (FnOnce() -> T) + Send + Sync) -> T {
                 pool = pool.num_threads(num_cpus::get_physical());
             }
 
-            pool.build().unwrap()
-        });
+            Self {
+                pool: pool.build().unwrap(),
+            }
+        }
 
-        pool.install(op)
+        #[cfg(any(not(feature = "rayon"), target_arch = "wasm32"))]
+        {
+            Self {}
+        }
     }
-    #[cfg(any(not(feature = "rayon"), target_arch = "wasm32"))]
+
+    pub fn install<OP, R>(&self, op: OP) -> R
+    where
+        OP: FnOnce() -> R + Send,
+        R: Send,
     {
-        // wasm-bindgen-rayon doesn't support custom thread pools
-        // https://github.com/RReverser/wasm-bindgen-rayon/issues/18
-        op()
+        #[cfg(all(feature = "rayon", not(target_arch = "wasm32")))]
+        {
+            self.pool.install(op)
+        }
+
+        #[cfg(any(not(feature = "rayon"), target_arch = "wasm32"))]
+        {
+            // wasm-bindgen-rayon doesn't support custom thread pools
+            // https://github.com/RReverser/wasm-bindgen-rayon/issues/18
+            op()
+        }
     }
 }
 
@@ -86,12 +105,12 @@ impl<'a, const N: usize, T> ZipChunks<'a, N, T> {
         // Store raw pointers before consuming self.arrays
         let ptrs: [*mut T; N] = self.arrays.each_mut().map(|s| s.as_mut_ptr());
 
-        let left_halves = std::array::from_fn(|i: usize| unsafe {
-            std::slice::from_raw_parts_mut(ptrs[i], split_point)
+        let left_halves = core::array::from_fn(|i: usize| unsafe {
+            core::slice::from_raw_parts_mut(ptrs[i], split_point)
         });
 
-        let right_halves = std::array::from_fn(|i: usize| unsafe {
-            std::slice::from_raw_parts_mut(ptrs[i].add(split_point), len - split_point)
+        let right_halves = core::array::from_fn(|i: usize| unsafe {
+            core::slice::from_raw_parts_mut(ptrs[i].add(split_point), len - split_point)
         });
 
         (

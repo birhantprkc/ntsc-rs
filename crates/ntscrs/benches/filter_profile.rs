@@ -5,6 +5,7 @@ use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use ntsc_rs::{
     NtscEffect,
+    ctx::Context,
     yiq_fielding::{BlitInfo, DeinterlaceMode, Rgb, YiqView, pixel_bytes_for},
 };
 
@@ -27,10 +28,11 @@ fn criterion_benchmark(c: &mut Criterion) {
                         YiqView::buf_length_for((width, height), effect.use_field.to_yiq_field(0))
                     ];
                 let dest = vec![0u8; data.len()];
+                let ctx = Context::new();
 
-                (width, height, effect, data, scratch, dest)
+                (width, height, effect, data, scratch, dest, ctx)
             },
-            |(width, height, effect, buf, scratch, dest)| {
+            |(width, height, effect, buf, scratch, dest, ctx)| {
                 let mut yiq = YiqView::from_parts(
                     scratch,
                     (*width, *height),
@@ -38,9 +40,10 @@ fn criterion_benchmark(c: &mut Criterion) {
                 );
                 let row_bytes = *width * pixel_bytes_for::<Rgb, u8>();
                 let blit_info = BlitInfo::from_full_frame(*width, *height, row_bytes);
-                yiq.set_from_strided_buffer::<Rgb, u8, _>(buf, blit_info, ());
-                effect.apply_effect_to_yiq(&mut yiq, 0, [1.0, 1.0]);
+                yiq.set_from_strided_buffer::<Rgb, u8, _>(ctx, buf, blit_info, ());
+                effect.apply_effect_to_yiq(ctx, &mut yiq, 0, [1.0, 1.0]);
                 yiq.write_to_strided_buffer::<Rgb, u8, _>(
+                    ctx,
                     dest,
                     blit_info,
                     DeinterlaceMode::Bob,

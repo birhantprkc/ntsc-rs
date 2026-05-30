@@ -1,4 +1,4 @@
-use std::num::NonZero;
+use core::num::NonZero;
 
 use fearless_simd::{Level, dispatch, f32x4, prelude::*};
 
@@ -375,7 +375,7 @@ impl TransferFunction {
     }
 }
 
-impl std::ops::Mul<&TransferFunction> for &TransferFunction {
+impl core::ops::Mul<&TransferFunction> for &TransferFunction {
     type Output = TransferFunction;
 
     fn mul(self, rhs: &TransferFunction) -> Self::Output {

@@ -20,6 +20,7 @@ use std::{
 
 use ntsc_rs::{
     NtscEffect,
+    ctx::Context,
     settings::{
         EnumValue, SettingDescriptor, SettingID, SettingKind, Settings, SettingsList,
         standard::NtscEffectFullSettings,
@@ -66,6 +67,7 @@ struct SharedData {
     /// to have a static lifetime.
     menu_item_strings:
         HashMap<(SettingID<NtscEffectFullSettings>, u32), (CString, Option<CString>)>,
+    ctx: ntsc_rs::ctx::Context,
 }
 
 type OfxResult<T> = Result<T, OfxStatus>;
@@ -136,6 +138,7 @@ impl SharedData {
             supports_multiple_clip_depths: AtomicBool::new(false),
             strings,
             menu_item_strings,
+            ctx: Context::new(),
         })
     }
 }
@@ -1152,14 +1155,20 @@ impl<'a> EffectApplicationParams<'a> {
             flip_y,
         );
         if self.apply_srgb_gamma {
-            yiq_view
-                .set_from_strided_buffer_maybe_uninit::<S, T, _>(srcData, blit_info, srgb_gamma);
+            yiq_view.set_from_strided_buffer_maybe_uninit::<S, T, _>(
+                &data.ctx, srcData, blit_info, srgb_gamma,
+            );
         } else {
-            yiq_view.set_from_strided_buffer_maybe_uninit::<S, T, _>(srcData, blit_info, ());
+            yiq_view.set_from_strided_buffer_maybe_uninit::<S, T, _>(
+                &data.ctx,
+                srcData,
+                blit_info,
+                (),
+            );
         }
 
         self.effect
-            .apply_effect_to_yiq(&mut yiq_view, self.frame_num, self.proxy_scale);
+            .apply_effect_to_yiq(&data.ctx, &mut yiq_view, self.frame_num, self.proxy_scale);
 
         drop(locked_buf);
 
@@ -1178,6 +1187,8 @@ impl<'a> EffectApplicationParams<'a> {
 
 impl EffectStorageParams<'_> {
     unsafe fn write_to_output<D: PixelFormat, T: Normalize>(mut self) -> OfxResult<()> {
+        let data = shared_data.get().ok_or(OfxStat::kOfxStatFailed)?;
+
         let dstHeight = (self.dst_bounds.y2 - self.dst_bounds.y1) as usize;
         let srcWidth = (self.src_bounds.x2 - self.src_bounds.x1) as usize;
         let srcHeight = (self.src_bounds.y2 - self.src_bounds.y1) as usize;
@@ -1211,6 +1222,7 @@ impl EffectStorageParams<'_> {
 
         if self.apply_srgb_gamma {
             yiq_view.write_to_strided_buffer_maybe_uninit::<D, T, _>(
+                &data.ctx,
                 dstData,
                 blit_info,
                 DeinterlaceMode::Bob,
@@ -1218,6 +1230,7 @@ impl EffectStorageParams<'_> {
             )
         } else {
             yiq_view.write_to_strided_buffer_maybe_uninit::<D, T, _>(
+                &data.ctx,
                 dstData,
                 blit_info,
                 DeinterlaceMode::Bob,

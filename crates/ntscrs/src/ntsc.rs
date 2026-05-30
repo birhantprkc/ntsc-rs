@@ -1,15 +1,21 @@
-use std::{f32::consts::FRAC_1_SQRT_2, ops::Range};
-
-use core::f32::consts::PI;
+use core::{
+    cmp,
+    f32::consts::{FRAC_1_SQRT_2, PI},
+    ops::Range,
+};
 use fearless_simd::{Level, dispatch, prelude::*};
 
+#[cfg(not(feature = "std"))]
+use core_maths::CoreFloat as _;
+
 use crate::{
+    ctx::Context,
     filter::TransferFunction,
     noise::{Fbm, Simplex, Simplex1d, Simplex2d, add_noise_1d, sample_noise_1d, sample_noise_2d},
     random::{SplitMix64, geometric_lambda},
     settings::standard::*,
     shift::{BoundaryHandling, shift_row, shift_row_to},
-    thread_pool::{self, ZipChunks, with_thread_pool},
+    thread_pool::{self, ZipChunks},
     yiq_fielding::{
         BlitInfo, Normalize, PixelFormat, YiqField, YiqOwned, YiqView, pixel_bytes_for,
     },
@@ -141,7 +147,7 @@ impl<T, const N: usize> FixedQueue<T, N> {
 
     #[inline(always)]
     fn push(&mut self, item: T) -> T {
-        let res = std::mem::replace(&mut self.queue[self.i], item);
+        let res = core::mem::replace(&mut self.queue[self.i], item);
         self.i = (self.i + 1) % N;
         res
     }
@@ -153,7 +159,13 @@ impl<T, const N: usize> FixedQueue<T, N> {
 }
 
 impl EffectCtx {
-    fn new(settings: &NtscEffect, height: usize, frame_num: usize, scale_factor: [f32; 2]) -> Self {
+    fn new(
+        ctx: &Context,
+        settings: &NtscEffect,
+        height: usize,
+        frame_num: usize,
+        scale_factor: [f32; 2],
+    ) -> Self {
         let video_size_scale_factor = if settings
             .scale
             .as_ref()
@@ -165,7 +177,7 @@ impl EffectCtx {
         };
 
         Self {
-            level: Level::new(),
+            level: ctx.level,
             seed: settings.random_seed as u32 as u64,
             frame_num,
             horizontal_scale: scale_factor[0]
@@ -238,12 +250,12 @@ impl EffectCtx {
             }
 
             let mut iter = rows.chunks_exact_mut(width);
-            let mut rows: [&mut [f32]; ROWS] = std::array::from_fn(|_| iter.next().unwrap());
+            let mut rows: [&mut [f32]; ROWS] = core::array::from_fn(|_| iter.next().unwrap());
 
             let initial_rows: [f32; ROWS] = match initial {
                 InitialCondition::Zero => [0.0f32; ROWS],
                 InitialCondition::Constant(c) => [c; ROWS],
-                InitialCondition::FirstSample => std::array::from_fn(|i| rows[i][0]),
+                InitialCondition::FirstSample => core::array::from_fn(|i| rows[i][0]),
             };
 
             filter.filter_signal_in_place::<ROWS>(self.level, &mut rows, initial_rows, delay);
@@ -466,7 +478,7 @@ impl EffectCtx {
         const I_MULT_INV: [f32; 4] = [-1.0, 0.0, 1.0, 0.0];
         const Q_MULT_INV: [f32; 4] = [0.0, -1.0, 0.0, 1.0];
 
-        for index in std::iter::once(0).chain(remainder_start..width) {
+        for index in core::iter::once(0).chain(remainder_start..width) {
             let offset_c = (index + xi) & 3;
             let chroma_c = y[index] - modulated[index];
             let mut i_modulated = chroma_c * I_MULT_INV[offset_c];
@@ -1002,7 +1014,7 @@ impl EffectCtx {
         let height = yiq.num_rows();
 
         match offset.1.cmp(&0) {
-            std::cmp::Ordering::Less => {
+            cmp::Ordering::Less => {
                 let offset = (-offset.1) as usize;
                 // Starting from the top, copy (or write a horizontally-shifted copy of) each row upwards.
                 for dst_row_idx in 0..height {
@@ -1026,14 +1038,14 @@ impl EffectCtx {
                     }
                 }
             }
-            std::cmp::Ordering::Equal => {
+            cmp::Ordering::Equal => {
                 // Only a horizontal shift is necessary. We can do this in-place easily.
                 ZipChunks::new([yiq.i, yiq.q], width).par_for_each(|_, [i, q]| {
                     shift_row(i, horiz_shift, BoundaryHandling::Constant(0.0), self.level);
                     shift_row(q, horiz_shift, BoundaryHandling::Constant(0.0), self.level);
                 });
             }
-            std::cmp::Ordering::Greater => {
+            cmp::Ordering::Greater => {
                 // Some finagling is required to shift vertically. This branch shifts the chroma planes downwards.
                 let offset = offset.1 as usize;
                 // Starting from the bottom, copy (or write a horizontally-shifted copy of) each row downwards.
@@ -1075,7 +1087,7 @@ impl EffectCtx {
         let noise = Fbm {
             seed: noise_seed,
             octaves: settings.detail.clamp(1, 5) as usize,
-            gain: std::f32::consts::FRAC_1_SQRT_2,
+            gain: FRAC_1_SQRT_2,
             lacunarity: 2.0,
             frequency: settings.frequency / self.vertical_scale,
         };
@@ -1160,13 +1172,14 @@ impl EffectCtx {
 impl NtscEffect {
     fn apply_effect_to_yiq_field(
         &self,
+        ctx: &Context,
         yiq: &mut YiqView,
         frame_num: usize,
         scale_factor: [f32; 2],
     ) {
         let width = yiq.dimensions.0;
 
-        let ctx = EffectCtx::new(self, yiq.dimensions.1, frame_num, scale_factor);
+        let ctx = EffectCtx::new(ctx, self, yiq.dimensions.1, frame_num, scale_factor);
 
         ctx.luma_filter(yiq, self.input_luma_filter);
 
@@ -1430,13 +1443,14 @@ impl NtscEffect {
 
     fn apply_effect_to_all_fields(
         &self,
+        ctx: &Context,
         yiq: &mut YiqView,
         frame_num: usize,
         scale_factor: [f32; 2],
     ) {
         match yiq.field {
             YiqField::Upper | YiqField::Lower | YiqField::Both => {
-                self.apply_effect_to_yiq_field(yiq, frame_num, scale_factor);
+                self.apply_effect_to_yiq_field(ctx, yiq, frame_num, scale_factor);
             }
             YiqField::InterleavedUpper | YiqField::InterleavedLower => {
                 // "Interleaved" basically means we apply the effect to one set of fields, then apply it again to the
@@ -1460,20 +1474,27 @@ impl NtscEffect {
 
                 if let Some(yiq_upper) = yiq_upper.as_mut() {
                     yiq_upper.field = YiqField::Upper;
-                    self.apply_effect_to_yiq_field(yiq_upper, frame_num_upper, scale_factor);
+                    self.apply_effect_to_yiq_field(ctx, yiq_upper, frame_num_upper, scale_factor);
                 }
 
                 if let Some(yiq_lower) = yiq_lower.as_mut() {
                     yiq_lower.field = YiqField::Lower;
-                    self.apply_effect_to_yiq_field(yiq_lower, frame_num_lower, scale_factor);
+                    self.apply_effect_to_yiq_field(ctx, yiq_lower, frame_num_lower, scale_factor);
                 }
             }
         }
     }
 
     /// Apply the effect to YIQ image data.
-    pub fn apply_effect_to_yiq(&self, yiq: &mut YiqView, frame_num: usize, scale_factor: [f32; 2]) {
-        with_thread_pool(|| self.apply_effect_to_all_fields(yiq, frame_num, scale_factor));
+    pub fn apply_effect_to_yiq(
+        &self,
+        ctx: &Context,
+        yiq: &mut YiqView,
+        frame_num: usize,
+        scale_factor: [f32; 2],
+    ) {
+        ctx.thread_pool
+            .install(|| self.apply_effect_to_all_fields(ctx, yiq, frame_num, scale_factor));
     }
 
     /// Apply the effect to a buffer which contains pixels in the given format.
@@ -1481,6 +1502,7 @@ impl NtscEffect {
     /// reusing the output buffer.
     pub fn apply_effect_to_buffer<S: PixelFormat, T: Normalize>(
         &self,
+        ctx: &Context,
         dimensions: (usize, usize),
         input_frame: &mut [T],
         frame_num: usize,
@@ -1489,6 +1511,7 @@ impl NtscEffect {
         let field = self.use_field.to_yiq_field(frame_num);
         let row_bytes = dimensions.0 * pixel_bytes_for::<S, T>();
         let mut yiq = YiqOwned::from_strided_buffer::<S, T>(
+            ctx,
             input_frame,
             row_bytes,
             dimensions.0,
@@ -1496,8 +1519,9 @@ impl NtscEffect {
             field,
         );
         let mut view = YiqView::from(&mut yiq);
-        self.apply_effect_to_yiq(&mut view, frame_num, scale_factor);
+        self.apply_effect_to_yiq(ctx, &mut view, frame_num, scale_factor);
         view.write_to_strided_buffer::<S, T, _>(
+            ctx,
             input_frame,
             BlitInfo::from_full_frame(dimensions.0, dimensions.1, row_bytes),
             crate::yiq_fielding::DeinterlaceMode::Bob,

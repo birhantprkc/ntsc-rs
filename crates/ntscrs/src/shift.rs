@@ -29,11 +29,7 @@ fn shift_row_initial_conditions(
         }
         BoundaryHandling::Constant(value) => value,
     };
-    let shift_frac = if shift < 0.0 {
-        1.0 - shift.fract().abs()
-    } else {
-        shift.fract()
-    };
+    let shift_frac = shift - (shift_int as f32);
 
     (shift_int, shift_frac, boundary_value)
 }
@@ -223,6 +219,7 @@ pub fn shift_row_to(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::{vec, vec::Vec};
 
     const TEST_DATA: &[f32] = &[1.0, 2.5, -0.7, 0.0, 0.0, 2.2, 0.3];
 
