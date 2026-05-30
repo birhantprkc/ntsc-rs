@@ -101,7 +101,7 @@ impl TransferFunction {
     }
 
     #[inline(always)]
-    fn num_den(&self) -> (&[f32], &[f32]) {
+    fn coeffs(&self) -> (&[f32], &[f32]) {
         let len = self.len();
         (&self.coeffs[..len], &self.coeffs[4..4 + len - 1])
     }
@@ -128,7 +128,7 @@ impl TransferFunction {
             return;
         }
 
-        let (num, den) = self.num_den();
+        let (num, den) = self.coeffs();
 
         let mut b_sum = 0.0;
         for i in 1..filter_len {
@@ -214,7 +214,7 @@ impl TransferFunction {
         });
         let z_rows_ref = z_rows.each_mut().map(|z| z.as_mut_slice());
 
-        let (num, den) = self.num_den();
+        let (num, den) = self.coeffs();
         Self::filter_signal_in_place_impl::<ROWS>(signal, num, den, z_rows_ref, delay);
     }
 
@@ -256,7 +256,7 @@ impl TransferFunction {
 
         let mut num = [0.0f32; 4];
         let mut den = [0.0f32; 4];
-        let (my_num, my_den) = self.num_den();
+        let (my_num, my_den) = self.coeffs();
         num[0..self.len()].copy_from_slice(my_num);
         den[0..self.len() - 1].copy_from_slice(my_den);
 
@@ -379,8 +379,8 @@ impl std::ops::Mul<&TransferFunction> for &TransferFunction {
     type Output = TransferFunction;
 
     fn mul(self, rhs: &TransferFunction) -> Self::Output {
-        let (lhs_num, lhs_den) = self.num_den();
-        let (rhs_num, rhs_den) = rhs.num_den();
+        let (lhs_num, lhs_den) = self.coeffs();
+        let (rhs_num, rhs_den) = rhs.coeffs();
         // Add back the implicit leading 1 coefficient for denominator multiplication
         let mut lhs_den_full = [0f32; 4];
         lhs_den_full[0] = 1.0;
