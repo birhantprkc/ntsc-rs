@@ -10,7 +10,7 @@ use std::{
     collections::HashMap,
     ffi::{CStr, CString, c_char, c_int, c_void},
     fs,
-    mem::{self, MaybeUninit},
+    mem::MaybeUninit,
     ptr,
     sync::{
         OnceLock,
@@ -1118,17 +1118,15 @@ impl<'a> EffectApplicationParams<'a> {
                 .assume_init();
         let mut locked_buf = ntsc_buf.lock()?;
 
+        let srcStride = self.src_row_bytes.unsigned_abs() as usize;
         let (srcFirstRowPtr, flip_y) = if self.src_row_bytes < 0 {
             // Currently untested because I can't find an OFX host that uses negative rowbytes. Fingers crossed it works!
-            let row_size = self.src_row_bytes / mem::size_of::<T>() as i32;
-            (
-                self.src_ptr.sub(-row_size as usize * (srcHeight - 1)),
-                false,
-            )
+            // The host's pointer is to the topmost (highest-address) row; re-base it to the first row in memory so the
+            // rest of the code can treat the buffer as positively-strided.
+            (self.src_ptr.sub(srcStride * (srcHeight - 1)), false)
         } else {
             (self.src_ptr, true)
         };
-        let srcStride = self.src_row_bytes.unsigned_abs() as usize;
 
         let mut yiq_view =
             YiqView::from_parts(locked_buf.as_mut(), (srcWidth, srcHeight), cur_field);
@@ -1190,17 +1188,15 @@ impl EffectStorageParams<'_> {
         let mut locked = self.yiq_data.lock()?;
         let yiq_view = YiqView::from_parts(locked.as_mut(), (srcWidth, srcHeight), cur_field);
 
+        let dstStride = self.dst_row_bytes.unsigned_abs() as usize;
         let (dstFirstRowPtr, flip_y) = if self.dst_row_bytes < 0 {
             // Currently untested because I can't find an OFX host that uses negative rowbytes. Fingers crossed it works!
-            let row_size = self.dst_row_bytes / mem::size_of::<T>() as i32;
-            (
-                self.dst_ptr.sub(-row_size as usize * (dstHeight - 1)),
-                false,
-            )
+            // The host's pointer is to the topmost (highest-address) row; re-base it to the first row in memory so the
+            // rest of the code can treat the buffer as positively-strided.
+            (self.dst_ptr.sub(dstStride * (dstHeight - 1)), false)
         } else {
             (self.dst_ptr, true)
         };
-        let dstStride = self.dst_row_bytes.unsigned_abs() as usize;
         let dstData = slice::from_raw_parts_mut(
             dstFirstRowPtr as *mut MaybeUninit<T>,
             dstStride / std::mem::size_of::<T>() * dstHeight,
