@@ -85,9 +85,4 @@ pub const fn unskew_factor(dimension: usize) -> f32 {
     ((1.0 / SQRT_TABLE[dimension + 1]) - 1.0) / dimension as f32
 }
 
-const SQRT_TABLE: [f32; 4] = [
-    0.0,
-    1.0,
-    core::f32::consts::SQRT_2,
-    1.732_050_8_f32,
-];
+const SQRT_TABLE: [f32; 4] = [0.0, 1.0, core::f32::consts::SQRT_2, 1.732_050_8_f32];
