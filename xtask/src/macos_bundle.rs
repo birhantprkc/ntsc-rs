@@ -142,11 +142,11 @@ pub fn main(args: &clap::ArgMatches) -> Result<(), Box<dyn Error>> {
     info_plist_contents.insert("CFBundleName".to_string(), plist::Value::from("ntsc-rs"));
     info_plist_contents.insert(
         "CFBundleVersion".to_string(),
-        plist::Value::from(gui_version),
+        plist::Value::from(gui_version.to_string()),
     );
     info_plist_contents.insert(
         "CFBundleShortVersionString".to_string(),
-        plist::Value::from(gui_version),
+        plist::Value::from(gui_version.to_string()),
     );
     info_plist_contents.insert(
         "NSHumanReadableCopyright".to_string(),

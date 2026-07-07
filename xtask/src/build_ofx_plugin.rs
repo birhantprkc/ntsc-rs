@@ -82,10 +82,10 @@ fn get_info_plist() -> plist::Value {
         "CFBundleIdentifier".to_string(),
         plist::Value::from("rs.ntsc.openfx"),
     );
-    info_plist_contents.insert("CFBundleVersion".to_string(), plist::Value::from(version));
+    info_plist_contents.insert("CFBundleVersion".to_string(), plist::Value::from(version.to_string()));
     info_plist_contents.insert(
         "CFBundleShortVersionString".to_string(),
-        plist::Value::from(version),
+        plist::Value::from(version.to_string()),
     );
     info_plist_contents.insert(
         "NSHumanReadableCopyright".to_string(),
