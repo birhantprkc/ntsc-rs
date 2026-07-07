@@ -1262,7 +1262,12 @@ mod tests {
         ];
         for (field, expected) in cases {
             for (h, e) in expected.iter().enumerate() {
-                assert_eq!(field.num_image_rows(h + 1), *e, "{field:?}, height {}", h + 1);
+                assert_eq!(
+                    field.num_image_rows(h + 1),
+                    *e,
+                    "{field:?}, height {}",
+                    h + 1
+                );
             }
         }
     }
@@ -1328,9 +1333,18 @@ mod tests {
             YiqView::max_buf_length_for((4, 5), UseField::Alternating),
             4 * 3 * 4
         );
-        assert_eq!(YiqView::max_buf_length_for((4, 5), UseField::Upper), 4 * 3 * 4);
-        assert_eq!(YiqView::max_buf_length_for((4, 5), UseField::Lower), 4 * 2 * 4);
-        assert_eq!(YiqView::max_buf_length_for((4, 5), UseField::Both), 4 * 5 * 4);
+        assert_eq!(
+            YiqView::max_buf_length_for((4, 5), UseField::Upper),
+            4 * 3 * 4
+        );
+        assert_eq!(
+            YiqView::max_buf_length_for((4, 5), UseField::Lower),
+            4 * 2 * 4
+        );
+        assert_eq!(
+            YiqView::max_buf_length_for((4, 5), UseField::Both),
+            4 * 5 * 4
+        );
     }
 
     #[test]
@@ -1479,7 +1493,12 @@ mod tests {
             (InterleavedUpper, 1, &[10.], &[10.]),
             (InterleavedUpper, 2, &[10., 20.], &[10., 20.]),
             (InterleavedUpper, 3, &[10., 20., 30.], &[10., 30., 20.]),
-            (InterleavedUpper, 4, &[10., 20., 30., 40.], &[10., 30., 20., 40.]),
+            (
+                InterleavedUpper,
+                4,
+                &[10., 20., 30., 40.],
+                &[10., 30., 20., 40.],
+            ),
             (
                 InterleavedUpper,
                 5,
@@ -1489,7 +1508,12 @@ mod tests {
             (InterleavedLower, 1, &[10.], &[10.]),
             (InterleavedLower, 2, &[10., 20.], &[20., 10.]),
             (InterleavedLower, 3, &[10., 20., 30.], &[20., 10., 30.]),
-            (InterleavedLower, 4, &[10., 20., 30., 40.], &[30., 10., 40., 20.]),
+            (
+                InterleavedLower,
+                4,
+                &[10., 20., 30., 40.],
+                &[30., 10., 40., 20.],
+            ),
             (
                 InterleavedLower,
                 5,
@@ -1577,7 +1601,10 @@ mod tests {
                         "buffer ({row}, {col}): got {got}, expected {expected}"
                     );
                 } else {
-                    assert_eq!(got, SENT, "buffer ({row}, {col}) written outside blit region");
+                    assert_eq!(
+                        got, SENT,
+                        "buffer ({row}, {col}) written outside blit region"
+                    );
                 }
             }
         }
@@ -1590,26 +1617,28 @@ mod tests {
         // and receives the rect's row 0, i.e. source row 2 (value 30).
         let img = gray_image(W, &row_values(6));
         let blit_at = |dest_y: usize| {
-            BlitInfo::new(
-                Rect::new(2, 0, 4, W),
-                (0, dest_y),
-                RGBX_ROW_BYTES,
-                6,
-                false,
-            )
+            BlitInfo::new(Rect::new(2, 0, 4, W), (0, dest_y), RGBX_ROW_BYTES, 6, false)
         };
 
         let mut buf = vec![SENT; YiqView::buf_length_for((W, 6), YiqField::Upper)];
         let mut view = YiqView::from_parts(&mut buf, (W, 6), YiqField::Upper);
         view.set_from_strided_buffer::<Rgbx, f32, _>(ctx(), &img, blit_at(2), ());
-        assert_rows_eq(&plane_rows(view.y, W), &[SENT, 30., SENT], "even destination");
+        assert_rows_eq(
+            &plane_rows(view.y, W),
+            &[SENT, 30., SENT],
+            "even destination",
+        );
 
         // Same blit at destination row 1 (odd): frame row 2 is now the rect's row 1, i.e.
         // source row 3 (value 40). This exercises the field-parity flip for odd destinations.
         let mut buf = vec![SENT; YiqView::buf_length_for((W, 6), YiqField::Upper)];
         let mut view = YiqView::from_parts(&mut buf, (W, 6), YiqField::Upper);
         view.set_from_strided_buffer::<Rgbx, f32, _>(ctx(), &img, blit_at(1), ());
-        assert_rows_eq(&plane_rows(view.y, W), &[SENT, 40., SENT], "odd destination");
+        assert_rows_eq(
+            &plane_rows(view.y, W),
+            &[SENT, 40., SENT],
+            "odd destination",
+        );
     }
 
     #[test]
@@ -1678,9 +1707,19 @@ mod tests {
             let img = gray_image(W, &row_values(5));
             let mut buf = vec![SENT; YiqView::buf_length_for((W, 5), *field)];
             let mut view = YiqView::from_parts(&mut buf, (W, 5), *field);
-            let blit = BlitInfo::new(Rect::from_width_height(W, 5), (0, 0), RGBX_ROW_BYTES, 5, true);
+            let blit = BlitInfo::new(
+                Rect::from_width_height(W, 5),
+                (0, 0),
+                RGBX_ROW_BYTES,
+                5,
+                true,
+            );
             view.set_from_strided_buffer::<Rgbx, f32, _>(ctx(), &img, blit, ());
-            assert_rows_eq(&plane_rows(view.y, W), expected, &alloc::format!("{field:?}"));
+            assert_rows_eq(
+                &plane_rows(view.y, W),
+                expected,
+                &alloc::format!("{field:?}"),
+            );
         }
     }
 
@@ -1692,7 +1731,13 @@ mod tests {
             view.y[r * W..(r + 1) * W].fill(v);
         }
         let mut out = vec![SENT; W * 5 * 4];
-        let blit = BlitInfo::new(Rect::from_width_height(W, 5), (0, 0), RGBX_ROW_BYTES, 5, true);
+        let blit = BlitInfo::new(
+            Rect::from_width_height(W, 5),
+            (0, 0),
+            RGBX_ROW_BYTES,
+            5,
+            true,
+        );
         view.write_to_strided_buffer::<Rgbx, f32, _>(
             ctx(),
             &mut out,
@@ -1700,7 +1745,11 @@ mod tests {
             DeinterlaceMode::Bob,
             (),
         );
-        assert_rows_eq(&out_rows(&out, W), &[50., 40., 30., 20., 10.], "write flip_y");
+        assert_rows_eq(
+            &out_rows(&out, W),
+            &[50., 40., 30., 20., 10.],
+            "write flip_y",
+        );
     }
 
     #[test]
@@ -1734,7 +1783,13 @@ mod tests {
         let img = gray_image(W, &row_values(4));
         let mut buf = vec![0.0; YiqView::buf_length_for((W, 4), YiqField::Both)];
         let mut view = YiqView::from_parts(&mut buf, (W, 4), YiqField::Both);
-        let blit = BlitInfo::new(Rect::from_width_height(W, 4), (0, 0), RGBX_ROW_BYTES, 4, true);
+        let blit = BlitInfo::new(
+            Rect::from_width_height(W, 4),
+            (0, 0),
+            RGBX_ROW_BYTES,
+            4,
+            true,
+        );
         view.set_from_strided_buffer::<Rgbx, f32, _>(ctx(), &img, blit, ());
         let mut out = vec![SENT; W * 4 * 4];
         view.write_to_strided_buffer::<Rgbx, f32, _>(
@@ -1770,7 +1825,11 @@ mod tests {
         let mut view = YiqView::from_parts(&mut buf, (W, height), YiqField::Both);
         let blit = BlitInfo::from_full_frame(W, height, row_bytes);
         view.set_from_strided_buffer::<Rgbx, f32, _>(ctx(), &img, blit, ());
-        assert_rows_eq(&plane_rows(view.y, W), &row_values(height), "set with padding");
+        assert_rows_eq(
+            &plane_rows(view.y, W),
+            &row_values(height),
+            "set with padding",
+        );
 
         let mut out = vec![SENT; row_len * height];
         view.write_to_strided_buffer::<Rgbx, f32, _>(
@@ -1784,7 +1843,10 @@ mod tests {
             let row = &out[r * row_len..(r + 1) * row_len];
             for px in row[..W * 4].chunks_exact(4) {
                 for c in 0..3 {
-                    assert!((px[c] - v).abs() <= 0.01, "row {r}: got {px:?}, expected {v}");
+                    assert!(
+                        (px[c] - v).abs() <= 0.01,
+                        "row {r}: got {px:?}, expected {v}"
+                    );
                 }
                 assert_eq!(px[3], 1.0);
             }
@@ -1811,8 +1873,7 @@ mod tests {
         for (r, &v) in row_values(height).iter().enumerate() {
             for c in 0..W {
                 for ch in 0..4 {
-                    img[r * row_len + c * 4 + ch] =
-                        MaybeUninit::new(if ch == 3 { 7.0 } else { v });
+                    img[r * row_len + c * 4 + ch] = MaybeUninit::new(if ch == 3 { 7.0 } else { v });
                 }
             }
         }
@@ -1827,7 +1888,11 @@ mod tests {
                 (),
             );
         }
-        assert_rows_eq(&plane_rows(view.y, W), &row_values(height), "set from uninit");
+        assert_rows_eq(
+            &plane_rows(view.y, W),
+            &row_values(height),
+            "set from uninit",
+        );
     }
 
     #[test]
@@ -1851,7 +1916,11 @@ mod tests {
             (),
         );
         let out: Vec<f32> = out.iter().map(|v| unsafe { v.assume_init() }).collect();
-        assert_rows_eq(&out_rows(&out, W), &row_values(height), "write all to uninit");
+        assert_rows_eq(
+            &out_rows(&out, W),
+            &row_values(height),
+            "write all to uninit",
+        );
 
         let mut buf = vec![0.0; YiqView::buf_length_for((W, height), YiqField::Upper)];
         let view = YiqView::from_parts(&mut buf, (W, height), YiqField::Upper);

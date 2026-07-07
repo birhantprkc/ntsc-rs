@@ -59,17 +59,22 @@ impl Grid<2> for Simplex {
         let x0: S::f32s = x - (ips - t);
         let y0: S::f32s = y - (jps - t);
 
-        let i1 = x0.simd_ge(y0).bitcast::<S::i32s>();
-        let j1 = y0.simd_gt(x0).bitcast::<S::i32s>();
+        // Offsets of the second (middle) vertex of the enclosing simplex: (1, 0)
+        // for the lower triangle, (0, 1) for the upper one
+        let simd = x.witness();
+        let one = S::i32s::splat(simd, 1);
+        let zero = S::i32s::splat(simd, 0);
+        let i1 = x0.simd_ge(y0).select(one, zero);
+        let j1 = y0.simd_gt(x0).select(one, zero);
 
         // Distances to the second and third points of the enclosing simplex
-        let x1 = x0 + S::f32s::float_from(i1) + UNSKEW;
-        let y1 = y0 + S::f32s::float_from(j1) + UNSKEW;
+        let x1 = x0 - S::f32s::float_from(i1) + UNSKEW;
+        let y1 = y0 - S::f32s::float_from(j1) + UNSKEW;
         let x2 = x0 - 1.0 + 2.0 * UNSKEW;
         let y2 = y0 - 1.0 + 2.0 * UNSKEW;
 
         (
-            [[i, j], [i - i1, j - j1], [i + 1, j + 1]],
+            [[i, j], [i + i1, j + j1], [i + 1, j + 1]],
             [[x0, y0], [x1, y1], [x2, y2]],
         )
     }
