@@ -197,12 +197,23 @@ impl SettingField for bool {
 pub trait SettingsEnum {}
 
 /// A fixed identifier that points to a given setting. The id and name cannot be changed or reused once created.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SettingID<T: Settings> {
     pub id: u32,
     pub name: &'static str,
     pub get: fn(settings: &T) -> AnySetting,
     pub set: fn(settings: &mut T, value: AnySetting) -> Result<(), GetSetFieldError>,
+}
+
+impl<T: Settings> core::fmt::Debug for SettingID<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SettingID")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("get", &self.get)
+            .field("set", &self.set)
+            .finish()
+    }
 }
 
 // We can't use derive here because of the type parameter:

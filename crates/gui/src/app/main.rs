@@ -848,7 +848,7 @@ impl NtscApp {
     fn show_effect_settings(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         egui::Panel::bottom("preset_copy_paste")
             .interact_height_tall(ui)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     if ui.button("Save to...").clicked() {
                         let settings_list = self.settings_list.clone();
@@ -1005,7 +1005,7 @@ impl NtscApp {
                 ui.spacing().interact_size.y..=200.0,
                 collapse_state.openness(ui.ctx()),
             ))
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 // Prevent buttons in the preset manager from having their outlines cut off
                 ui.visuals_mut().clip_rect_margin = 2.0;
                 let collapse_state = collapse_state.show_header(ui, |ui| {
@@ -1032,7 +1032,7 @@ impl NtscApp {
                 });
             });
 
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             if let Some(egui::DroppedFile {
                 path: Some(preset_path),
                 ..
@@ -1145,7 +1145,8 @@ impl NtscApp {
     fn setup_control_rows(ui: &mut egui::Ui) {
         const LABEL_WIDTH: f32 = 180.0;
 
-        let remaining_width = ui.max_rect().width() - LABEL_WIDTH;
+        // Subtract 2.0 to avoid some weird egui bug (https://github.com/emilk/egui/pull/8056)
+        let remaining_width = ui.max_rect().width() - LABEL_WIDTH - 2.0;
 
         let spacing = ui.spacing_mut();
         spacing.slider_width = remaining_width - 48.0;
@@ -1489,7 +1490,7 @@ impl NtscApp {
 
         egui::Panel::top("video_info")
             .interact_height(ui)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let mut remove_pipeline = false;
                     let mut change_framerate_res = None;
@@ -1643,7 +1644,7 @@ impl NtscApp {
 
         egui::Panel::bottom("video_controls")
             .interact_height_tall(ui)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 if self.pipeline.is_none() {
                     ui.disable();
                 }
@@ -1865,7 +1866,7 @@ impl NtscApp {
 
         egui::CentralPanel::default()
             .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(0.0))
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 ui.visuals_mut().clip_rect_margin = 0.0;
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                     if let Some(info) = &mut self.pipeline {
@@ -2128,7 +2129,7 @@ impl NtscApp {
 
         egui::Panel::top("menu_bar")
             .interact_height(ui)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.menu_button("File", |ui| {
                         if ui.button("Open").clicked() {
@@ -2290,11 +2291,11 @@ impl NtscApp {
             .resizable(true)
             .default_size(425.0)
             .size_range(300.0..=800.0)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 ui.visuals_mut().clip_rect_margin = 0.0;
                 egui::Panel::top("left_tabs")
                     .interact_height(ui)
-                    .show_inside(ui, |ui| {
+                    .show(ui, |ui| {
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                             ui.selectable_value(
                                 &mut self.left_panel_state,
@@ -2311,7 +2312,7 @@ impl NtscApp {
 
                 egui::CentralPanel::default()
                     .frame(egui::Frame::central_panel(ui.style()).inner_margin(0.0))
-                    .show_inside(ui, |ui| match self.left_panel_state {
+                    .show(ui, |ui| match self.left_panel_state {
                         LeftPanelState::EffectSettings => {
                             self.show_effect_settings(ui, frame);
                         }
@@ -2323,14 +2324,14 @@ impl NtscApp {
 
         egui::CentralPanel::default()
             .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(0.0))
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 ui.visuals_mut().clip_rect_margin = 0.0;
                 self.show_video_pane(ui, frame);
             });
     }
 
     fn show_loading_screen(ui: &mut egui::Ui) {
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             ui.centered_and_justified(|ui| {
                 ui.add(egui::Spinner::new().size(128.0));
             });
@@ -2338,7 +2339,7 @@ impl NtscApp {
     }
 
     fn show_error_screen(ui: &mut egui::Ui, error: &ApplicationError) {
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             ui.vertical(|ui| {
                 ui.heading("An error occurred while loading");
                 ui.label(error.to_string());
