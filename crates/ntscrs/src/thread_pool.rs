@@ -7,8 +7,11 @@ impl ThreadPool {
     pub fn new() -> Self {
         #[cfg(all(feature = "rayon", not(target_arch = "wasm32")))]
         {
-            // On Windows debug builds, the stack overflows with the default stack size
-            let mut pool = rayon_core::ThreadPoolBuilder::new().stack_size(2 * 1024 * 1024);
+            // On Windows debug builds, the stack overflows with the default stack size.
+            //
+            // Not sure how big the stack should actually be here. It *was* 2MB, but that was apparently overflowing in
+            // *release* builds of the AE plugin (https://x.com/KazunaEdits/status/2050129514089648321).
+            let mut pool = rayon_core::ThreadPoolBuilder::new().stack_size(4 * 1024 * 1024);
 
             // Use physical core count instead of logical core count. Hyperthreading seems to be ~20-25% slower, at least on
             // a Ryzen 7 7700X.
